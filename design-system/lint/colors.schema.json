@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["colorTokenFiles", "rules"],
+  "additionalProperties": false,
+  "properties": {
+    "colorTokenFiles": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Repo-relative paths of files that define color tokens (e.g. src/styles.css). Raw color values are allowed here — they're the source of truth."
+    },
+    "rules": {
+      "type": "object",
+      "description": "Per-rule configuration keyed by rule name (matches the file in scripts/lint-color/rules/). Set \"enabled\" to false to turn a rule off.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["enabled", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Set to false to disable this rule entirely."
+          },
+          "description": {
+            "type": "string",
+            "description": "What this rule enforces — shown in the console when a violation is found."
+          },
+          "allowed": {
+            "type": "object",
+            "description": "Per-prefix allow lists (token-constraints rule). Key is a color prefix (text, border, …) or \"hover:\" for the hover variant. Token must match at least one pattern in the list.",
+            "additionalProperties": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          },
+          "denied": {
+            "type": "object",
+            "description": "Per-prefix deny lists (token-constraints rule). Key is a color prefix or \"*\" as fallback. Token must not match any pattern.",
+            "additionalProperties": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          },
+          "interactiveElements": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Additional HTML tags treated as interactive by the no-useless-hover rule (hover: is allowed on these)."
+          },
+          "componentsDirectory": {
+            "type": "string",
+            "description": "Repo-relative path to scan for UI components (no-component-color-override rule). Each .tsx file becomes a component name; passing color classes to these via className is disallowed."
+          },
+          "replacement": {
+            "type": "object",
+            "description": "Per-prefix replacement hints (no-spectral-color rule). Each entry maps a spectral color + shade range to a semantic token name, e.g. { \"green-400...600\": \"success-content\" }. Shown in the violation message.",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+  }
+}

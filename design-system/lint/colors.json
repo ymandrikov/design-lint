@@ -1,0 +1,85 @@
+{
+  "colorTokenFiles": ["src/styles.css"],
+
+  "rules": {
+    "no-style-color": {
+      "enabled": true,
+      "description": "No color or backgroundColor in style= props"
+    },
+    "no-raw-css-color": {
+      "enabled": true,
+      "description": "No raw color values in component CSS. Use semantic tokens instead"
+    },
+    "no-opacity-modifier": {
+      "enabled": true,
+      "description": "No opacity modifiers on color classes. Add a semantic token instead"
+    },
+    "no-spectral-color": {
+      "enabled": true,
+      "description": "No spectral (palette) Tailwind color classes. Use semantic tokens instead",
+      "replacement": {
+        "text": [
+          { "green-400...600": "success-content" },
+          { "emerald-400...600": "success-content" },
+          { "blue-400...600": "info-content" },
+          { "sky-400...600": "info-content" },
+          { "yellow-400...500": "warning-content" },
+          { "amber-400...500": "warning-content" },
+          { "orange-400...500": "warning-content" },
+          { "red-400...500": "danger-content" },
+          { "rose-400...500": "danger-content" }
+        ],
+        "bg": [
+          { "green-100...200": "success-weak" },
+          { "green-400...600": "success" },
+          { "emerald-100...200": "success-weak" },
+          { "emerald-400...600": "success" },
+          { "blue-100...200": "info-weak" },
+          { "blue-400...600": "info" },
+          { "sky-100...200": "info-weak" },
+          { "sky-400...600": "info" },
+          { "yellow-100...200": "warning-weak" },
+          { "yellow-400...500": "warning" },
+          { "amber-100...200": "warning-weak" },
+          { "amber-400...500": "warning" },
+          { "orange-100...200": "warning-weak" },
+          { "orange-400...500": "warning" },
+          { "red-100...200": "danger-weak" },
+          { "red-400...500": "danger" },
+          { "rose-100...200": "danger-weak" },
+          { "rose-400...500": "danger" }
+        ]
+      }
+    },
+    "no-dark-variant": {
+      "enabled": true,
+      "description": "Don't use dark: variant. Use semantic tokens instead"
+    },
+    "no-useless-hover": {
+      "enabled": true,
+      "description": "Don't use hover: on non-interactive elements",
+      "interactiveElements": ["tr", "td", "th"]
+    },
+    "no-component-color-override": {
+      "enabled": true,
+      "description": "Don't override color className on component. Choose from the variants, or create a new one",
+      "componentsDirectory": "src/components/ui"
+    },
+    "no-undefined-token": {
+      "enabled": true,
+      "description": "Color class references a token not defined in the color token files"
+    },
+    "token-constraints": {
+      "enabled": true,
+      "description": "Color class violates token constraints",
+      "allowed": {
+        "text": ["*foreground*", "*content*", "primary", "link*"],
+        "border": ["border*", "input", "ring"],
+        "hover:": ["*-hover"]
+      },
+      "denied": {
+        "*": ["*-foreground", "*-content"]
+      }
+    }
+  }
+}
