@@ -7,10 +7,11 @@ export const name = "no-raw-css-color";
 export const RAW_COLOR_RE =
   /#[0-9a-fA-F]{3,8}\b|(?:rgb|rgba|hsl|hsla|oklch|lch|lab|oklab|hwb)\s*\(/;
 
-// checkToken(rawTok, tok, normalized, ctx) → message string or null.
+// checkToken(rawTok, parts, ctx) → message string or null.
 // Catches raw colors in Tailwind arbitrary values (bg-[#ff0000]) and bare color
 // strings extracted from style prop values (style={{ color: "#f00" }}).
-export function checkToken(rawTok, tok, normalized, ctx) {
+// Scans the raw token directly — the color decomposition isn't needed here.
+export function checkToken(rawTok, parts, ctx) {
   const { ansi } = ctx;
   // Arbitrary value bracket: bg-[#ff0000], text-[rgb(255,0,0)], etc.
   const bracketMatch = rawTok.match(/\[([^\]]+)\]/);

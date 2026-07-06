@@ -16,12 +16,19 @@ export type TokenCtx = {
   ruleConfig?: Record<string, unknown>;
 };
 
+export type ColorParts = {
+  variants: string[];
+  base: string;
+  modifier: string | null;
+  colorPrefix: string | null;
+  colorPart: string | null;
+};
+
 export type LintSourceFn = (source: string, filePath: string, ctx: LintCtx) => void;
 export type CheckLineFn = (line: string, ctx: { ansi: Ansi }) => string | null;
 export type CheckTokenFn = (
   rawTok: string,
-  tok: string,
-  normalized: string,
+  parts: ColorParts,
   ctx: TokenCtx,
 ) => string | null;
 

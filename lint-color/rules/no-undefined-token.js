@@ -6,20 +6,18 @@
 export const id = 12;
 export const name = "no-undefined-token";
 
-export function checkToken(rawTok, tok, normalized, ctx) {
+// checkToken(rawTok, parts, ctx) → message string or null.
+export function checkToken(rawTok, parts, ctx) {
   const { tokens, ansi } = ctx;
-  const { colorPrefixes, isValidTailwindCandidate } = tokens;
+  const { isValidTailwindCandidate } = tokens;
+  const { base, colorPrefix, colorPart } = parts;
 
   if (!isValidTailwindCandidate) return null;
-
-  const colorPrefix = colorPrefixes.find((p) => tok.startsWith(p + "-"));
   if (!colorPrefix) return null;
-
-  const colorPart = tok.slice(colorPrefix.length + 1);
   if (colorPart.startsWith("[")) return null;
 
-  if (!isValidTailwindCandidate(tok)) {
-    return `${ansi.red(tok)} — ${ansi.red(colorPart)} is not defined; check spelling or add ${ansi.blue("--color-" + colorPart)}`;
+  if (!isValidTailwindCandidate(base)) {
+    return `${ansi.red(base)} — ${ansi.red(colorPart)} is not defined; check spelling or add ${ansi.blue("--color-" + colorPart)}`;
   }
   return null;
 }

@@ -3,7 +3,7 @@
 import { readdirSync } from "node:fs";
 import { extname, join } from "node:path";
 
-import { splitColorToken } from "./classify.js";
+import { composeColorParts } from "./classify.js";
 
 // The spectral-color and color-prefix constant sets now live in the
 // classification module (classify.js), which owns the color vocabulary.
@@ -41,11 +41,11 @@ export function lintSourceIfEnabled(disabledRules, ruleModule, source, filePath,
   return found;
 }
 
-// Run a checkToken-based rule against a single token.
+// Run a checkToken-based rule against a single token's pre-split parts.
 // Returns null immediately if the rule name is in disabledRules.
-export function checkTokenIfEnabled(disabledRules, ruleModule, rawTok, tok, normalized, tokens, ansi, ruleConfig = {}) {
+export function checkTokenIfEnabled(disabledRules, ruleModule, rawTok, parts, tokens, ansi, ruleConfig = {}) {
   if (disabledRules.has(ruleModule.name)) return null;
-  return ruleModule.checkToken(rawTok, tok, normalized, { tokens, ansi, ruleConfig });
+  return ruleModule.checkToken(rawTok, parts, { tokens, ansi, ruleConfig });
 }
 
 // Run a checkLine-based rule against a single CSS line.
@@ -71,19 +71,6 @@ export function isStorybookFile(filePath) {
   );
 }
 
-// Strip Tailwind variant prefixes and the important marker, returning the base
-// with any Modifier still attached: "hover:!bg-red/50" → "bg-red/50".
-//
-// DEPRECATED — a thin wrapper over the bracket-aware splitColorToken so current
-// call sites stop splitting variants on a bracketed ":" without a signature
-// change (finding #5). Callers still re-split the result on "/", so a base that
-// itself contains a slash isn't fully preserved until callers consume
-// splitColorToken parts directly in v1.1, when this wrapper is deleted.
-export function normalizeTwToken(tok) {
-  const { base, modifier } = splitColorToken(tok);
-  return modifier === null ? base : `${base}/${modifier}`;
-}
-
 // Extract string literal contents from a single source line.
 export function extractStringLiterals(line) {
   const results = [];
@@ -96,7 +83,8 @@ export function extractStringLiterals(line) {
 }
 
 // Run a checkToken-based rule against every string literal token in a JSX source string.
-// Returns the violation messages (strings) for all tokens that fire.
+// Composes the pre-split parts once per token, mirroring the pipeline, and hands
+// them to the rule. Returns the violation messages (strings) for all tokens that fire.
 export function runTokenRuleOnSource(checkTokenFn, source, tokens, ansi, ruleConfig = {}) {
   const violations = [];
   for (const line of source.split("\n")) {
@@ -104,9 +92,8 @@ export function runTokenRuleOnSource(checkTokenFn, source, tokens, ansi, ruleCon
     for (const str of extractStringLiterals(line)) {
       for (const rawTok of str.split(/\s+/)) {
         if (!rawTok) continue;
-        const normalized = normalizeTwToken(rawTok);
-        const tok = normalized.split("/")[0];
-        const msg = checkTokenFn(rawTok, tok, normalized, { tokens, ansi, ruleConfig });
+        const parts = composeColorParts(rawTok, tokens.colorPrefixes);
+        const msg = checkTokenFn(rawTok, parts, { tokens, ansi, ruleConfig });
         if (msg) violations.push(msg);
       }
     }

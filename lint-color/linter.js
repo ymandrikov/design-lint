@@ -7,8 +7,8 @@ import {
   checkTokenIfEnabled,
   extractStringLiterals,
   lintSourceIfEnabled,
-  normalizeTwToken,
 } from "./shared.js";
+import { composeColorParts } from "./classify.js";
 
 import * as ruleStyleColor from "./rules/no-style-color.js";
 import * as ruleRawCssColor from "./rules/no-raw-css-color.js";
@@ -24,29 +24,30 @@ export function createLinter(config, tokens, ansi) {
   const disabledRules = buildDisabledRules(config);
 
   // Runs all token rules against a single raw token. All rules run — no early returns.
+  // The bracket-aware decomposition happens once here; every rule reads the parts.
   function checkTailwindToken(rawTok) {
     const found = [];
+    const parts = composeColorParts(rawTok, tokens.colorPrefixes);
 
-    const darkMsg = checkTokenIfEnabled(disabledRules, ruleDarkModifier, rawTok, rawTok, rawTok, tokens, ansi, config[ruleDarkModifier.name]);
+    const darkMsg = checkTokenIfEnabled(disabledRules, ruleDarkModifier, rawTok, parts, tokens, ansi, config[ruleDarkModifier.name]);
     if (darkMsg) found.push({ message: darkMsg, ruleId: ruleDarkModifier.id });
 
-    const rawColorMsg = checkTokenIfEnabled(disabledRules, ruleRawCssColor, rawTok, rawTok, rawTok, tokens, ansi, config[ruleRawCssColor.name]);
+    const rawColorMsg = checkTokenIfEnabled(disabledRules, ruleRawCssColor, rawTok, parts, tokens, ansi, config[ruleRawCssColor.name]);
     if (rawColorMsg) found.push({ message: rawColorMsg, ruleId: ruleRawCssColor.id });
 
-    const normalized = normalizeTwToken(rawTok);
-    const tok = normalized.split("/")[0];
-    if (!tok) return found;
+    // No base (e.g. "/50" or a lone "!") — nothing for the color-part rules to see.
+    if (!parts.base) return found;
 
-    const alphaMsg = checkTokenIfEnabled(disabledRules, ruleAlphaModifier, rawTok, tok, normalized, tokens, ansi, config[ruleAlphaModifier.name]);
+    const alphaMsg = checkTokenIfEnabled(disabledRules, ruleAlphaModifier, rawTok, parts, tokens, ansi, config[ruleAlphaModifier.name]);
     if (alphaMsg) found.push({ message: alphaMsg, ruleId: ruleAlphaModifier.id });
 
-    const spectralMsg = checkTokenIfEnabled(disabledRules, ruleSpectralColor, rawTok, tok, normalized, tokens, ansi, config[ruleSpectralColor.name]);
+    const spectralMsg = checkTokenIfEnabled(disabledRules, ruleSpectralColor, rawTok, parts, tokens, ansi, config[ruleSpectralColor.name]);
     if (spectralMsg) found.push({ message: spectralMsg, ruleId: ruleSpectralColor.id });
 
-    const undefinedMsg = checkTokenIfEnabled(disabledRules, ruleUndefinedToken, rawTok, tok, normalized, tokens, ansi, config[ruleUndefinedToken.name]);
+    const undefinedMsg = checkTokenIfEnabled(disabledRules, ruleUndefinedToken, rawTok, parts, tokens, ansi, config[ruleUndefinedToken.name]);
     if (undefinedMsg) found.push({ message: undefinedMsg, ruleId: ruleUndefinedToken.id });
 
-    const constraintsMsg = checkTokenIfEnabled(disabledRules, ruleColorRules, rawTok, tok, normalized, tokens, ansi, config[ruleColorRules.name]);
+    const constraintsMsg = checkTokenIfEnabled(disabledRules, ruleColorRules, rawTok, parts, tokens, ansi, config[ruleColorRules.name]);
     if (constraintsMsg) found.push({ message: constraintsMsg, ruleId: ruleColorRules.id });
 
     return found;

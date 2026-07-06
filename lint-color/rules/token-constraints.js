@@ -17,15 +17,13 @@ function matchPattern(value, pattern) {
   return value === pattern;
 }
 
-// checkToken(rawTok, tok, normalized, ctx) → message string or null.
-export function checkToken(rawTok, tok, normalized, ctx) {
+// checkToken(rawTok, parts, ctx) → message string or null.
+export function checkToken(rawTok, parts, ctx) {
   const { tokens, ansi, ruleConfig } = ctx;
-  const { colorPrefixes, semanticSet } = tokens;
+  const { semanticSet } = tokens;
+  const { base, colorPrefix, colorPart, variants } = parts;
 
-  const colorPrefix = colorPrefixes.find((p) => tok.startsWith(p + "-"));
   if (!colorPrefix) return null;
-
-  const colorPart = tok.slice(colorPrefix.length + 1);
   if (!semanticSet.has(colorPart)) return null;
 
   const { allowed = {}, denied = {} } = ruleConfig ?? {};
@@ -38,7 +36,7 @@ export function checkToken(rawTok, tok, normalized, ctx) {
       const hint = firstSuffix
         ? ` — try ${ansi.blue(colorPrefix + "-" + colorPart + firstSuffix.slice(1))}`
         : "";
-      return `${ansi.red(tok)} — ${ansi.red(colorPart)} not allowed for ${ansi.blue(colorPrefix + "-")} (allowed: ${allowList.join(", ")})${hint}`;
+      return `${ansi.red(base)} — ${ansi.red(colorPart)} not allowed for ${ansi.blue(colorPrefix + "-")} (allowed: ${allowList.join(", ")})${hint}`;
     }
   } else {
     // No prefix-specific rule — check the deny list (prefix-specific or fallback "*").
@@ -46,13 +44,17 @@ export function checkToken(rawTok, tok, normalized, ctx) {
     if (denyList?.length) {
       const match = denyList.find((p) => matchPattern(colorPart, p));
       if (match) {
-        return `${ansi.red(tok)} — ${ansi.red(colorPart)} matches forbidden pattern ${ansi.blue(match)} for ${ansi.blue(colorPrefix + "-")} (see token-constraints in colors.json)`;
+        return `${ansi.red(base)} — ${ansi.red(colorPart)} matches forbidden pattern ${ansi.blue(match)} for ${ansi.blue(colorPrefix + "-")} (see token-constraints in colors.json)`;
       }
     }
   }
 
-  // hover: modifier — color part must match allowed["hover:"] when present.
-  if (rawTok.includes("hover:")) {
+  // hover: variant — color part must match allowed["hover:"] when present.
+  // Driven by the parsed Tailwind variants: "hover" itself plus any "-hover"
+  // compound (group-hover, peer-hover, …), matching what the old substring
+  // sniff caught — while a "hover:" buried in a bracket group (e.g.
+  // "[@media(hover:hover)]:…") is NOT mistaken for a hover variant.
+  if (variants.some((v) => v === "hover" || v.endsWith("-hover"))) {
     const hoverAllow = allowed["hover:"];
     if (hoverAllow?.length && !hoverAllow.some((p) => matchPattern(colorPart, p))) {
       return `${ansi.red(rawTok)} — hover: color classes must use a ${ansi.blue("-hover")} suffixed token (use ${ansi.blue(colorPrefix + "-" + colorPart + "-hover")})`;

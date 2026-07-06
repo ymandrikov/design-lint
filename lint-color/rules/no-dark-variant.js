@@ -5,9 +5,9 @@
 export const id = 9;
 export const name = "no-dark-variant";
 
-// checkToken(rawTok, tok, normalized, ctx) → message string or null.
-// Returns a message and signals the orchestrator to stop checking this token further.
-export function checkToken(rawTok, tok, normalized, ctx) {
+// checkToken(rawTok, parts, ctx) → message string or null.
+// Keys off the raw token only — no color decomposition needed.
+export function checkToken(rawTok, parts, ctx) {
   const { ansi } = ctx;
   if (/(?:^|:)dark:/.test(rawTok)) {
     return `${ansi.red(rawTok)} — dark: variant not allowed; use a semantic token (dark theme is handled via CSS custom properties)`;

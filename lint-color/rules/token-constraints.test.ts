@@ -88,6 +88,14 @@ describe("token-constraints", () => {
       const result = lint(el);
       expect(result).toHaveLength(1);
     });
+
+    // Compound hover variants are hover states too — the -hover constraint
+    // applies to group-hover:/peer-hover: exactly as to a bare hover:.
+    it("reports group-hover:text-primary (compound hover variant)", () => {
+      const el = `<div className="group-hover:text-primary" />`;
+      const result = lint(el);
+      expect(result).toHaveLength(1);
+    });
   });
 
   describe("non-violations", () => {
@@ -148,6 +156,16 @@ describe("token-constraints", () => {
     // link-hover matches "link*" in the text allow list AND "*-hover" in allowed["hover:"]
     it("allows hover:text-link-hover (clears allow list and hover constraint)", () => {
       const el = `<div className="hover:text-link-hover" />`;
+      const result = lint(el);
+      expect(result).toHaveLength(0);
+    });
+
+    // v1.1 — the hover check is driven by parsed Tailwind variants, not a
+    // "hover:" substring sniff. A literal "hover:" buried inside an arbitrary
+    // variant's bracket group is NOT a hover variant, so the -hover suffix
+    // constraint must not fire.
+    it("does not trigger the hover constraint on a bracket-embedded 'hover:'", () => {
+      const el = `<div className="[@media(hover:hover)]:text-primary" />`;
       const result = lint(el);
       expect(result).toHaveLength(0);
     });

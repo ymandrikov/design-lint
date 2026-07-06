@@ -10,7 +10,7 @@ import {
   extractJsxOpeningTags,
   offsetToLine,
 } from "../shared.js";
-import { classifyColorPart, findColorPrefix, splitColorToken } from "../classify.js";
+import { classifyColorPart, composeColorParts } from "../classify.js";
 import { RAW_COLOR_RE } from "./no-raw-css-color.js";
 
 // Returns true when tok applies a known semantic or spectral color via any color prefix.
@@ -23,11 +23,9 @@ import { RAW_COLOR_RE } from "./no-raw-css-color.js";
 // `bg-${color}`) or a spectral-prefixed trailing dash ("bg-red-" from
 // `bg-red-${shade}`) still counts.
 function isColorToken(tok, tokens) {
-  const { base } = splitColorToken(tok);
-  const prefix = findColorPrefix(base, tokens.colorPrefixes);
-  if (!prefix) return false;
+  const { colorPrefix, colorPart } = composeColorParts(tok, tokens.colorPrefixes);
+  if (!colorPrefix) return false;
 
-  const colorPart = base.slice(prefix.length + 1);
   if (!colorPart) return true; // "bg-" fragment from a template literal
   if (classifyColorPart(colorPart, tokens) !== null) return true;
 

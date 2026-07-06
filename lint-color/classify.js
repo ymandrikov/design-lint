@@ -137,3 +137,20 @@ export function findColorPrefix(base, colorPrefixes) {
   }
   return best;
 }
+
+// composeColorParts(rawTok, colorPrefixes) → { variants, base, modifier, colorPrefix, colorPart }
+//
+// The single per-token decomposition the pipeline hands to every token rule, so
+// splitting and color-prefix lookup happen exactly once per candidate. Rules
+// read these glossary-aligned parts instead of re-deriving them.
+//   - variants / base / modifier : straight from splitColorToken.
+//   - colorPrefix : longest-match color prefix on the base, or null.
+//   - colorPart   : the base with its color prefix removed (the empty string for
+//                   a bare "bg-" template fragment), or null when there is no
+//                   color prefix.
+export function composeColorParts(rawTok, colorPrefixes) {
+  const { variants, base, modifier } = splitColorToken(rawTok);
+  const colorPrefix = findColorPrefix(base, colorPrefixes ?? []);
+  const colorPart = colorPrefix === null ? null : base.slice(colorPrefix.length + 1);
+  return { variants, base, modifier, colorPrefix, colorPart };
+}
