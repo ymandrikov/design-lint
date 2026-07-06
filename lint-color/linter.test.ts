@@ -64,7 +64,13 @@ function checkCss(line: string, rules: Rules) {
 // separator (out of scope: making rules FIRE on named colors in arbitrary
 // values — that is de-corrupted only here).
 describe("bracket-aware token splitting (finding #5)", () => {
-  const enabled = { "no-undefined-token": { enabled: true } };
+  // no-raw-css-color is disabled here so these tests isolate SPLIT integrity;
+  // that named colors in arbitrary values now FIRE (issue 03) is covered by
+  // no-raw-css-color's own suite.
+  const enabled = {
+    "no-undefined-token": { enabled: true },
+    "no-raw-css-color": { enabled: false },
+  };
 
   it("does not corrupt an arbitrary value whose inner colon tail looks like a color class", () => {
     const el = `<div className="text-[x:bg-nope]" />`;

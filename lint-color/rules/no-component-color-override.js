@@ -15,7 +15,7 @@ import {
   offsetToLine,
 } from "../ast.js";
 import { classifyColorPart, composeColorParts } from "../classify.js";
-import { RAW_COLOR_RE } from "./no-raw-css-color.js";
+import { findRawColor } from "./no-raw-css-color.js";
 
 // Returns true when tok applies a known semantic or spectral color via any color prefix.
 // text-sm / text-center / shadow-md → false (not a color token).
@@ -80,13 +80,13 @@ export function lintSource(source, filePath, ctx) {
       } else if (name === "style") {
         for (const { valueNode, node: propNode } of styleObjectProps(attr.value)) {
           if (!valueNode || valueNode.type !== "Literal" || typeof valueNode.value !== "string") continue;
-          const match = valueNode.value.match(RAW_COLOR_RE);
-          if (!match) continue;
+          const rawColor = findRawColor(valueNode.value);
+          if (!rawColor) continue;
           const line = offsetToLine(ast.lineStarts, propNode.start);
           if (ignore.has(line)) continue;
           report(
             line,
-            `${ansi.red(match[0])} in style= overrides color on ${ansi.red(`<${tagName}>`)} — add a ${ansi.blue("variant")} instead`,
+            `${ansi.red(rawColor)} in style= overrides color on ${ansi.red(`<${tagName}>`)} — add a ${ansi.blue("variant")} instead`,
           );
         }
       }

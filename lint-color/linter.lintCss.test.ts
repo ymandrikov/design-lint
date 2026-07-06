@@ -44,14 +44,21 @@ describe("lintCssSource — raw color detection on declaration values", () => {
     expect(violations).toHaveLength(0);
   });
 
-  it("does NOT flag an invalid 5-digit hex value", () => {
+  // is-color is intentionally loose (issue 03): any `#`-prefixed token is a
+  // color, matching Tailwind — so an invalid-length hex is flagged too.
+  it("flags a 5-digit hex value (is-color is loose)", () => {
     const { violations } = lintCss(".x {\n  color: #abcde;\n}");
-    expect(violations).toHaveLength(0);
+    expect(violations).toHaveLength(1);
   });
 
-  it("does NOT flag an invalid 7-digit hex value", () => {
+  it("flags a 7-digit hex value (is-color is loose)", () => {
     const { violations } = lintCss(".x {\n  color: #abcdef0;\n}");
-    expect(violations).toHaveLength(0);
+    expect(violations).toHaveLength(1);
+  });
+
+  it("flags a CSS named color (issue 03 — color: red)", () => {
+    const { violations } = lintCss(".x {\n  color: red;\n}");
+    expect(violations).toHaveLength(1);
   });
 
   it("allows a var(--color-*) token value", () => {

@@ -32,6 +32,28 @@ describe("no-raw-css-color checkValue (declaration-value inspection)", () => {
     it("flags a raw color mixed among other value tokens", () => {
       expect(check("1px solid #abcdef")).toContain("#abcdef");
     });
+
+    it("flags a CSS named color (issue 03 — one color definition everywhere)", () => {
+      expect(check("red")).toContain("red");
+    });
+
+    it("flags a named color mixed among other value tokens", () => {
+      expect(check("1px solid black")).toContain("black");
+    });
+
+    it("flags color-mix()", () => {
+      expect(check("color-mix(in srgb, red, blue)")).toContain("color-mix(");
+    });
+
+    // is-color is intentionally loose: any `#`-prefixed token is a color, so an
+    // invalid-length hex is flagged too (Tailwind treats it as a color as well).
+    it("flags a 5-digit hex (is-color is loose)", () => {
+      expect(check("#abcde")).toContain("#abcde");
+    });
+
+    it("flags a 7-digit hex (is-color is loose)", () => {
+      expect(check("#abcdef0")).toContain("#abcdef0");
+    });
   });
 
   describe("not raw colors", () => {
@@ -43,20 +65,16 @@ describe("no-raw-css-color checkValue (declaration-value inspection)", () => {
       expect(check("url(#gradientId)")).toBeNull();
     });
 
-    it("ignores a 5-digit (invalid) hex", () => {
-      expect(check("#abcde")).toBeNull();
-    });
-
-    it("ignores a 7-digit (invalid) hex", () => {
-      expect(check("#abcdef0")).toBeNull();
-    });
-
     it("ignores a plain length value", () => {
       expect(check("1rem")).toBeNull();
     });
 
-    it("ignores a keyword", () => {
+    it("ignores a non-color keyword (inherit is not a named color)", () => {
       expect(check("inherit")).toBeNull();
+    });
+
+    it("ignores a non-color keyword (solid)", () => {
+      expect(check("solid")).toBeNull();
     });
   });
 });

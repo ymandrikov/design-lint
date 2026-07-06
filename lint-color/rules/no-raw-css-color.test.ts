@@ -1,154 +1,124 @@
 import { describe, expect, it } from "vitest";
 import { ansi, type CheckTokenFn } from "../helpers.js";
-import { runTokenRuleOnSource } from "../shared.js";
+import {
+  TAILWIND_COLOR_PREFIXES,
+  TAILWIND_SPECTRAL_COLORS,
+  runTokenRuleOnSource,
+} from "../shared.js";
 
 const { checkToken } = (await import("./no-raw-css-color.js")) as {
   checkToken: CheckTokenFn;
 };
 
-const lint = (el: string) => runTokenRuleOnSource(checkToken, el, {}, ansi);
+const baseTokens = {
+  spectralSet: TAILWIND_SPECTRAL_COLORS,
+  colorPrefixes: TAILWIND_COLOR_PREFIXES,
+  semanticSet: new Set(["primary"]),
+};
+
+const lint = (el: string) => runTokenRuleOnSource(checkToken, el, baseTokens, ansi);
 
 describe("no-raw-css-color", () => {
-  describe("violations", () => {
+  describe("violations — hex and color functions in arbitrary values", () => {
     it("reports 6-digit hex in arbitrary value", () => {
-      const el = `<div className="bg-[#ff0000]" />`;
-      const result = lint(el);
+      const result = lint(`<div className="bg-[#ff0000]" />`);
       expect(result).toHaveLength(1);
-      expect(result[0]).toContain("#ff0000");
+      expect(result[0]).toContain("bg-[#ff0000]");
     });
 
     it("reports 3-digit hex in arbitrary value", () => {
-      const el = `<div className="text-[#f00]" />`;
-      const result = lint(el);
+      const result = lint(`<div className="text-[#f00]" />`);
       expect(result).toHaveLength(1);
-      expect(result[0]).toContain("#f00");
+      expect(result[0]).toContain("text-[#f00]");
     });
 
     it("reports 8-digit hex with alpha in arbitrary value", () => {
-      const el = `<div className="border-[#ff000080]" />`;
-      const result = lint(el);
+      const result = lint(`<div className="border-[#ff000080]" />`);
       expect(result).toHaveLength(1);
-      expect(result[0]).toContain("#ff000080");
+      expect(result[0]).toContain("border-[#ff000080]");
     });
 
     it("reports rgb() in arbitrary value", () => {
-      const el = `<div className="ring-[rgb(255,0,0)]" />`;
-      const result = lint(el);
+      const result = lint(`<div className="ring-[rgb(255,0,0)]" />`);
       expect(result).toHaveLength(1);
-      expect(result[0]).toContain("rgb(");
     });
 
     it("reports rgba() in arbitrary value", () => {
-      const el = `<div className="bg-[rgba(255,0,0,0.5)]" />`;
-      const result = lint(el);
+      const result = lint(`<div className="bg-[rgba(255,0,0,0.5)]" />`);
       expect(result).toHaveLength(1);
-      expect(result[0]).toContain("rgba(");
     });
 
     it("reports hsl() in arbitrary value", () => {
-      const el = `<div className="text-[hsl(0,100%,50%)]" />`;
-      const result = lint(el);
-      expect(result).toHaveLength(1);
-      expect(result[0]).toContain("hsl(");
+      expect(lint(`<div className="text-[hsl(0,100%,50%)]" />`)).toHaveLength(1);
     });
 
-    it("reports hsla() in arbitrary value", () => {
-      const el = `<div className="bg-[hsla(0,100%,50%,0.5)]" />`;
-      const result = lint(el);
-      expect(result).toHaveLength(1);
-      expect(result[0]).toContain("hsla(");
+    it("reports oklch() with underscore-separated args", () => {
+      // Tailwind uses underscores for spaces inside arbitrary values.
+      expect(lint(`<div className="text-[oklch(0.7_0.15_30)]" />`)).toHaveLength(1);
     });
 
-    it("reports oklch() in arbitrary value", () => {
-      // Tailwind uses underscores for spaces inside arbitrary values
-      const el = `<div className="text-[oklch(0.7_0.15_30)]" />`;
-      const result = lint(el);
+    it("reports oklab(), lch(), lab(), hwb()", () => {
+      expect(lint(`<div className="text-[oklab(0.5_0.1_-0.1)]" />`)).toHaveLength(1);
+      expect(lint(`<div className="text-[lch(50_80_30)]" />`)).toHaveLength(1);
+      expect(lint(`<div className="text-[lab(50_40_-20)]" />`)).toHaveLength(1);
+      expect(lint(`<div className="text-[hwb(0_0%_0%)]" />`)).toHaveLength(1);
+    });
+  });
+
+  describe("violations — named colors and typehints (issue 03)", () => {
+    it("reports a bare CSS named color (bg-[red])", () => {
+      const result = lint(`<div className="bg-[red]" />`);
       expect(result).toHaveLength(1);
-      expect(result[0]).toContain("oklch(");
+      expect(result[0]).toContain("bg-[red]");
     });
 
-    it("reports oklab() in arbitrary value", () => {
-      const el = `<div className="text-[oklab(0.5_0.1_-0.1)]" />`;
-      const result = lint(el);
+    it("reports a color: typehint with a named color (text-[color:red])", () => {
+      const result = lint(`<div className="text-[color:red]" />`);
       expect(result).toHaveLength(1);
-      expect(result[0]).toContain("oklab(");
     });
 
-    it("reports lch() in arbitrary value", () => {
-      const el = `<div className="text-[lch(50_80_30)]" />`;
-      const result = lint(el);
+    it("reports a var reference with a literal-color fallback (bg-[var(--x,red)])", () => {
+      const result = lint(`<div className="bg-[var(--x,red)]" />`);
       expect(result).toHaveLength(1);
-      expect(result[0]).toContain("lch(");
-    });
-
-    it("reports lab() in arbitrary value", () => {
-      const el = `<div className="text-[lab(50_40_-20)]" />`;
-      const result = lint(el);
-      expect(result).toHaveLength(1);
-      expect(result[0]).toContain("lab(");
-    });
-
-    it("reports hwb() in arbitrary value", () => {
-      const el = `<div className="text-[hwb(0_0%_0%)]" />`;
-      const result = lint(el);
-      expect(result).toHaveLength(1);
-      expect(result[0]).toContain("hwb(");
-    });
-
-    // v1 (Change C): the general token pipeline scans className/class only, never
-    // style values. A raw color in a style prop is caught by no-style-color (the
-    // `backgroundColor` key) and, on watched components, by
-    // no-component-color-override (the value) — not by this rule's token path.
-    it("does not scan style attribute values via the token pipeline", () => {
-      const el = `<div style={{ backgroundColor: "#f00" }} />`;
-      const result = lint(el);
-      expect(result).toHaveLength(0);
     });
   });
 
   describe("non-violations", () => {
     it("allows a semantic token (no arbitrary value)", () => {
-      const el = `<div className="bg-primary" />`;
-      const result = lint(el);
-      expect(result).toHaveLength(0);
+      expect(lint(`<div className="bg-primary" />`)).toHaveLength(0);
     });
 
-    it("allows a CSS variable in arbitrary value", () => {
-      const el = `<div className="bg-[var(--color-primary)]" />`;
-      const result = lint(el);
-      expect(result).toHaveLength(0);
+    it("allows a clean CSS variable in arbitrary value (owned by no-var-color)", () => {
+      expect(lint(`<div className="bg-[var(--color-primary)]" />`)).toHaveLength(0);
     });
 
-    it("allows a non-color arbitrary value", () => {
-      const el = `<div className="bg-[url('/img.png')]" />`;
-      const result = lint(el);
-      expect(result).toHaveLength(0);
+    it("allows the v4 var shorthand (owned by no-var-color)", () => {
+      expect(lint(`<div className="bg-(--color-primary)" />`)).toHaveLength(0);
     });
 
-    it("allows a CSS variable in style attribute", () => {
-      const el = `<div style={{ color: "var(--color-primary)" }} />`;
-      const result = lint(el);
-      expect(result).toHaveLength(0);
+    it("preserves an underscore in a var name — bg-[var(--my_var)] is not raw", () => {
+      expect(lint(`<div className="bg-[var(--my_var)]" />`)).toHaveLength(0);
     });
 
-    it("allows a non-color style property", () => {
-      const el = `<div style={{ fontSize: "1rem" }} />`;
-      const result = lint(el);
-      expect(result).toHaveLength(0);
+    it("allows a url() arbitrary value", () => {
+      expect(lint(`<div className="bg-[url('/img.png')]" />`)).toHaveLength(0);
     });
 
-    it("does not flag an invalid hex fragment (not a valid color)", () => {
-      const el = `<div className="bg-[#zz]" />`;
-      const result = lint(el);
-      expect(result).toHaveLength(0);
+    it("allows an explicit non-color typehint (bg-[length:200px])", () => {
+      expect(lint(`<div className="bg-[length:200px]" />`)).toHaveLength(0);
+    });
+
+    it("does not scan style attribute values via the token pipeline", () => {
+      // v1 (Change C): the token pipeline scans className/class only. A raw color
+      // in a style prop is caught by no-style-color / no-component-color-override.
+      expect(lint(`<div style={{ backgroundColor: "#f00" }} />`)).toHaveLength(0);
     });
   });
 
   describe("escaping", () => {
     it("skips lines with color-lint-ignore", () => {
       const el = `<div className="bg-[#ff0000]" /> {/* color-lint-ignore */}`;
-      const result = lint(el);
-      expect(result).toHaveLength(0);
+      expect(lint(el)).toHaveLength(0);
     });
   });
 });

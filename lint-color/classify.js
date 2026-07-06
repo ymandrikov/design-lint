@@ -4,7 +4,7 @@
 // Owns:
 //   - splitColorToken(rawTok)          decompose a candidate into Tailwind
 //                                      variants, base, and Modifier.
-//   - classifyColorPart(colorPart, …)  semantic | spectral | arbitrary | null.
+//   - classifyColorPart(colorPart, …)  semantic | spectral | static | raw | var | null.
 //   - findColorPrefix(base, …)         longest-match color prefix lookup.
 //   - the spectral-color and color-prefix constant sets.
 //
@@ -14,6 +14,8 @@
 
 import { segment } from "./vendor/segment.js";
 import { isValidArbitrary } from "./vendor/is-valid-arbitrary.js";
+import { decodeArbitraryValue } from "./vendor/decode-arbitrary-value.js";
+import { isColor } from "./vendor/is-color.js";
 
 // All Tailwind v3/v4 built-in palette color names (the ones with numeric scale shades).
 export const TAILWIND_SPECTRAL_COLORS = new Set([
@@ -79,27 +81,37 @@ export function splitColorToken(rawTok) {
   return { variants, base, modifier };
 }
 
-// classifyColorPart(colorPart, tokens) → "semantic" | "spectral" | "static" | "arbitrary" | null
+// classifyColorPart(colorPart, tokens) → "semantic" | "spectral" | "static" | "raw" | "var" | null
 //
 // colorPart is the base with its color prefix removed (e.g. "primary",
-// "red-500", "x-red-500", "black", "[color:red]").
+// "red-500", "x-red-500", "black", "[color:red]", "(--my-color)").
 //   - semantic  : an exact semantic-token name.
 //   - spectral  : a Tailwind palette color with a NUMERIC shade segment. The
 //                 segment scan handles compound bases like "x-red-500"
 //                 (from "divide-x-red-500") and "blue-200" alike.
 //   - static    : a Tailwind keyword color with no shade (black, white,
 //                 transparent, current, inherit).
-//   - arbitrary : an arbitrary value ("[…]") or var shorthand ("(…)").
-//   - null      : not a color (no shade, e.g. "red-foo" / "sm", or empty).
+//   - raw       : an arbitrary value that is a literal color — hex, color
+//                 function, CSS named color, `color:`-hinted content, or a var
+//                 reference with a literal-color fallback (`var(--x,red)`).
+//   - var       : a clean CSS-variable reference — `(--x)` shorthand,
+//                 `(color:--x)`, or `[var(--x)]` with no literal fallback.
+//   - null      : provably not a color — a non-color arbitrary value
+//                 (`[url(…)]`), an explicit non-color typehint (`length:`,
+//                 `image:`), no shade (e.g. "red-foo" / "sm"), or empty.
 export function classifyColorPart(colorPart, tokens) {
   if (!colorPart) return null;
   if (tokens.semanticSet?.has(colorPart)) return "semantic";
   if (TAILWIND_STATIC_COLORS.has(colorPart)) return "static";
 
-  // Arbitrary values / var shorthand are opaque — check them before the segment
-  // scan, else a bracketed interior that happens to contain a "<spectral>-<digits>"
-  // run (e.g. "(--red-500-rgb)") would be misread as spectral.
-  if (colorPart.includes("[") || colorPart.includes("(")) return "arbitrary";
+  // Arbitrary values / var shorthand are decoded and color-checked before the
+  // segment scan, else a bracketed interior that happens to contain a
+  // "<spectral>-<digits>" run (e.g. "(--red-500-rgb)") would be misread as
+  // spectral. Order inside: decode underscores → dataType typehint → var-shape
+  // → is-color (the one definition of "literal color").
+  if (colorPart.includes("[") || colorPart.includes("(")) {
+    return classifyArbitraryColor(colorPart);
+  }
 
   const segs = colorPart.split("-");
   for (let i = 0; i < segs.length - 1; i++) {
@@ -109,6 +121,84 @@ export function classifyColorPart(colorPart, tokens) {
   }
 
   return null;
+}
+
+// classifyArbitraryColor(colorPart) → "raw" | "var" | null
+//
+// colorPart is a bracketed arbitrary value ("[…]") or a v4 var shorthand ("(…)").
+// Mirrors the value-classification order Tailwind's parseCandidate uses for an
+// arbitrary color utility: decode underscores, peel an explicit dataType
+// typehint, recognize a CSS-variable reference, then fall back to is-color.
+function classifyArbitraryColor(colorPart) {
+  const last = colorPart[colorPart.length - 1];
+
+  // v4 var shorthand: `(--x)` or `(color:--x)`. Tailwind expands it to
+  // `var(<value>)` and requires the value to start with `--`, so it is a
+  // CSS-variable reference — `var` unless it smuggles a literal-color fallback
+  // (`(--x,red)` → `var(--x,red)`), which is raw like the bracketed form.
+  if (colorPart[0] === "(" && last === ")") {
+    const inner = colorPart.slice(1, -1);
+    const parts = segment(inner, ":");
+    const typehint = parts.length === 2 ? parts[0] : null;
+    const value = parts.length === 2 ? parts[1] : inner;
+    // An explicit non-color typehint (`(length:--x)` → a length CSS-var utility)
+    // is not a color — same rule as the bracketed branch below.
+    if (typehint !== null && typehint !== "color") return null;
+    if (!value.startsWith("--")) return null;
+    return classifyVarReference(`var(${value})`);
+  }
+
+  if (colorPart[0] !== "[" || last !== "]") return null;
+
+  const decoded = decodeArbitraryValue(colorPart.slice(1, -1));
+  const { typehint, value } = extractTypehint(decoded);
+
+  // An explicit non-color dataType (`length:`, `image:`, `url:`, …) is provably
+  // not a color; only `color:` keeps the value in color context.
+  if (typehint !== null && typehint !== "color") return null;
+
+  // A CSS-variable reference: `var` unless it smuggles a literal-color fallback.
+  const varVerdict = classifyVarReference(value);
+  if (varVerdict !== null) return varVerdict;
+
+  return isColor(value) ? "raw" : null;
+}
+
+// extractTypehint(value) → { typehint: string | null, value: string }
+//
+// A leading run of `[a-z-]` characters followed by a top-level ":" is Tailwind's
+// arbitrary-value dataType typehint (`color:red`, `length:200px`). Mirrors the
+// scan in Tailwind's candidate.ts. No typehint ⇒ { typehint: null, value }.
+function extractTypehint(value) {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code === 0x3a /* ":" */) {
+      return { typehint: value.slice(0, i), value: value.slice(i + 1) };
+    }
+    // a-z or "-" — still inside a possible typehint.
+    if (code === 0x2d || (code >= 0x61 && code <= 0x7a)) continue;
+    break;
+  }
+  return { typehint: null, value };
+}
+
+// classifyVarReference(value) → "var" | "raw" | null
+//
+// value is a decoded arbitrary interior. A `var(--x)` reference classifies `var`
+// unless it carries a literal-color fallback (`var(--x, red)`), which is a raw
+// color smuggled through a variable reference. A fallback that is itself a var
+// reference is followed recursively, so a color nested any depth deep
+// (`var(--x, var(--y, red))`) is still caught. Anything that is not a var
+// reference returns null (the caller falls back to is-color).
+function classifyVarReference(value) {
+  if (!/^var\(/i.test(value) || value[value.length - 1] !== ")") return null;
+  const inner = value.slice(4, -1);
+  const args = segment(inner, ",");
+  if (args.length >= 2) {
+    const fallback = args.slice(1).join(",").trim();
+    if (isColor(fallback) || classifyVarReference(fallback) === "raw") return "raw";
+  }
+  return "var";
 }
 
 // findColorPrefix(base, colorPrefixes) → prefix string | null

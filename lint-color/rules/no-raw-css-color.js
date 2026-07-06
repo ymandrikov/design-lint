@@ -1,63 +1,56 @@
-// Rule 2 — No raw color values in component CSS.
+// Rule 2 — No raw color values in component CSS or Tailwind arbitrary values.
 // Use a var(--color-*) token instead.
 
 import valueParser from "postcss-value-parser";
 
+import { classifyColorPart } from "../classify.js";
+import { isColor } from "../vendor/is-color.js";
+
 export const id = 2;
 export const name = "no-raw-css-color";
 
-// Hex must be exactly 3, 4, 6, or 8 digits — 5/7-digit hex is invalid CSS and
-// must not match (finding #8). Longest-first so a 6-digit hex isn't clipped to
-// a 3-digit prefix. The trailing \b rejects over-long runs (e.g. #abcdef0).
-export const RAW_COLOR_RE =
-  /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\b|(?:rgb|rgba|hsl|hsla|oklch|lch|lab|oklab|hwb)\s*\(/;
-
-// CSS functions whose call is itself a raw color literal.
-const COLOR_FUNCS = new Set([
-  "rgb", "rgba", "hsl", "hsla", "oklch", "lch", "lab", "oklab", "hwb",
-]);
-// A standalone hex color token (whole word, valid digit count).
-const HEX_WORD_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
-
 // checkToken(rawTok, parts, ctx) → message string or null.
-// Catches raw colors in Tailwind arbitrary values (bg-[#ff0000]) and bare color
-// strings extracted from style prop values (style={{ color: "#f00" }}).
-// Scans the raw token directly — the color decomposition isn't needed here.
+// Flags a literal color hiding in a Tailwind arbitrary value (bg-[#ff0000],
+// bg-[red], text-[color:red], bg-[var(--x,red)]). It consumes the shared
+// classification (verdict "raw") instead of re-scanning the token — one
+// definition of "literal color" for classes and CSS declarations alike.
 export function checkToken(rawTok, parts, ctx) {
-  const { ansi } = ctx;
-  // Arbitrary value bracket: bg-[#ff0000], text-[rgb(255,0,0)], etc.
-  const bracketMatch = rawTok.match(/\[([^\]]+)\]/);
-  if (bracketMatch && RAW_COLOR_RE.test(bracketMatch[1])) {
-    return `${ansi.red(rawTok)} — raw color in arbitrary value; use a ${ansi.blue("var(--color-*)")} token`;
-  }
-  // Bare raw color value (e.g. "#f00" from style={{ color: "#f00" }})
-  if (RAW_COLOR_RE.test(rawTok)) {
-    return `${ansi.red(rawTok)} — raw color value; use a ${ansi.blue("var(--color-*)")} token`;
-  }
-  return null;
+  const { tokens, ansi } = ctx;
+  if (classifyColorPart(parts.colorPart, tokens) !== "raw") return null;
+  return `${ansi.red(rawTok)} — raw color in arbitrary value; use a ${ansi.blue("var(--color-*)")} token`;
 }
 
-// checkValue(value, ctx) → message string or null.
-// Inspects a CSS declaration value via postcss-value-parser so color detection
-// never sees selectors or at-rule preludes. url(...) references are skipped —
-// a `#id` fragment inside url() is not a color (finding #8). The caller is
-// responsible for the declaration node, ignore detection, and line numbers.
-export function checkValue(value, ctx) {
-  const { ansi } = ctx;
+// findRawColor(value) → matched color string or null.
+// Inspects a CSS declaration / style-object value via postcss-value-parser so
+// color detection never sees selectors or at-rule preludes. url(...) references
+// are skipped — a `#id` fragment inside url() is not a color (finding #8). Every
+// other token is checked against the shared is-color, so named colors (`red`)
+// are flagged like hex and color functions. Returns the first raw color found.
+export function findRawColor(value) {
   let found = null;
   valueParser(value).walk((node) => {
     if (found) return false;
     if (node.type === "function") {
       // Don't descend into url() — its argument is a reference, not a color.
       if (node.value.toLowerCase() === "url") return false;
-      if (COLOR_FUNCS.has(node.value.toLowerCase())) {
+      // A color-function call (rgb/hsl/oklch/color-mix/…) is itself a raw color.
+      if (isColor(node.value + "(")) {
         found = valueParser.stringify(node);
         return false;
       }
-    } else if (node.type === "word" && HEX_WORD_RE.test(node.value)) {
+      // Otherwise descend (e.g. a raw color inside a gradient).
+    } else if (node.type === "word" && isColor(node.value)) {
       found = node.value;
     }
   });
+  return found;
+}
+
+// checkValue(value, ctx) → message string or null.
+// The caller owns the declaration node, ignore detection, and line numbers.
+export function checkValue(value, ctx) {
+  const { ansi } = ctx;
+  const found = findRawColor(value);
   if (found) {
     return `Raw color value ${ansi.red(found)} — use a ${ansi.blue("var(--color-*)")} token`;
   }

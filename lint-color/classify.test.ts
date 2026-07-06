@@ -64,15 +64,49 @@ describe("classifyColorPart", () => {
     expect(classifyColorPart("inherit", tokens)).toBe("static");
   });
 
-  it("recognizes arbitrary values and var shorthand", () => {
-    expect(classifyColorPart("[color:red]", tokens)).toBe("arbitrary");
-    expect(classifyColorPart("[#123456]", tokens)).toBe("arbitrary");
-    expect(classifyColorPart("(--my-color)", tokens)).toBe("arbitrary");
+  it("classifies literal-color arbitrary values as raw", () => {
+    expect(classifyColorPart("[#123456]", tokens)).toBe("raw");
+    expect(classifyColorPart("[rgb(0_0_0)]", tokens)).toBe("raw");
+    expect(classifyColorPart("[red]", tokens)).toBe("raw");
+    expect(classifyColorPart("[color:red]", tokens)).toBe("raw");
+    expect(classifyColorPart("[var(--x,red)]", tokens)).toBe("raw");
   });
 
-  it("treats a bracketed interior with a spectral-looking run as arbitrary, not spectral", () => {
-    expect(classifyColorPart("(--red-500-rgb)", tokens)).toBe("arbitrary");
-    expect(classifyColorPart("[--red-500-rgb]", tokens)).toBe("arbitrary");
+  it("classifies clean CSS-variable references as var", () => {
+    expect(classifyColorPart("(--my-color)", tokens)).toBe("var");
+    expect(classifyColorPart("(color:--my-color)", tokens)).toBe("var");
+    expect(classifyColorPart("[var(--my-color)]", tokens)).toBe("var");
+  });
+
+  it("classifies a var shorthand with a literal-color fallback as raw", () => {
+    // Tailwind expands (--x,red) to var(--x,red) — the fallback smuggles a color.
+    expect(classifyColorPart("(--x,red)", tokens)).toBe("raw");
+  });
+
+  it("a non-color typehint on a var shorthand is not a color ((length:--x) → null)", () => {
+    expect(classifyColorPart("(length:--x)", tokens)).toBeNull();
+  });
+
+  it("catches a literal color nested in a var fallback (any depth) as raw", () => {
+    expect(classifyColorPart("(--x,var(--y,red))", tokens)).toBe("raw");
+    expect(classifyColorPart("[var(--x,var(--y,red))]", tokens)).toBe("raw");
+  });
+
+  it("preserves an underscore in a var name — [var(--my_var)] is var, not raw", () => {
+    expect(classifyColorPart("[var(--my_var)]", tokens)).toBe("var");
+  });
+
+  it("classifies explicitly non-color arbitrary values as not-a-color (null)", () => {
+    expect(classifyColorPart("[url(hero.png)]", tokens)).toBeNull();
+    expect(classifyColorPart("[length:200px]", tokens)).toBeNull();
+    expect(classifyColorPart("[image:url(x)]", tokens)).toBeNull();
+  });
+
+  it("does not misread a bracketed interior with a spectral-looking run as spectral", () => {
+    // A var reference (starts with `--`) is a var, not spectral.
+    expect(classifyColorPart("(--red-500-rgb)", tokens)).toBe("var");
+    // `[--red-500-rgb]` is neither a var(...) reference nor a literal color.
+    expect(classifyColorPart("[--red-500-rgb]", tokens)).toBeNull();
   });
 
   it("returns null for non-color utilities and empty parts", () => {
