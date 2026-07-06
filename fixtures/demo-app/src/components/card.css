@@ -1,0 +1,8 @@
+.card {
+  color: #ff0000;
+  @apply bg-red-500;
+}
+
+.card-title {
+  color: var(--color-primary);
+}

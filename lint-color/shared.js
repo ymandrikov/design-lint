@@ -101,6 +101,8 @@ export function runTokenRuleOnSource(checkTokenFn, source, tokens, ansi, ruleCon
         for (const rawTok of text.split(/\s+/)) {
           if (!rawTok) continue;
           const parts = composeColorParts(rawTok, tokens.colorPrefixes);
+          // Not a Candidate — Tailwind would discard this string, so skip it.
+          if (parts === null) continue;
           const msg = checkTokenFn(rawTok, parts, { tokens, ansi, ruleConfig });
           if (msg) violations.push(msg);
         }

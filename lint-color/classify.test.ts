@@ -6,6 +6,7 @@ import { __unstable__loadDesignSystem } from "tailwindcss";
 
 import {
   classifyColorPart,
+  composeColorParts,
   findColorPrefix,
   splitColorToken,
   TAILWIND_COLOR_PREFIXES,
@@ -80,6 +81,38 @@ describe("classifyColorPart", () => {
   });
 });
 
+describe("composeColorParts — discarded strings return null", () => {
+  const parts = (tok: string) => composeColorParts(tok, TAILWIND_COLOR_PREFIXES);
+
+  it("returns null for a double top-level Modifier", () => {
+    expect(parts("bg-red-500/50/50")).toBeNull();
+  });
+
+  it("returns null for empty Modifiers", () => {
+    expect(parts("bg-red-500/")).toBeNull();
+    expect(parts("bg-[color:red]/[]")).toBeNull();
+    expect(parts("bg-[color:red]/()")).toBeNull();
+  });
+
+  it("returns null when an arbitrary segment fails isValidArbitrary", () => {
+    expect(parts("text-[color:red")).toBeNull(); // unbalanced bracket
+    expect(parts("bg-[red;]")).toBeNull(); // top-level ';'
+    expect(parts("bg-[a{b}]")).toBeNull(); // '{}' inside arbitrary
+  });
+
+  it("returns null for a variant that is not a valid arbitrary segment", () => {
+    expect(parts("{a:b}:bg-primary")).toBeNull();
+    expect(parts("]:dark:bg-primary")).toBeNull();
+  });
+
+  it("keeps registry-free candidates (root existence is not checked)", () => {
+    // `bogus` is not a real utility root, but the string is syntactically valid.
+    expect(parts("bogus-[#123]")).not.toBeNull();
+    expect(parts("bg-[url('a:b.png')]")).not.toBeNull();
+    expect(parts("bg-(--my-color)")).not.toBeNull();
+  });
+});
+
 describe("findColorPrefix — longest match", () => {
   it("prefers ring-offset over ring", () => {
     expect(findColorPrefix("ring-offset-blue-200", TAILWIND_COLOR_PREFIXES)).toBe(
@@ -128,6 +161,12 @@ describe("oracle — splitter agrees with Tailwind parseCandidate", () => {
       // so a broken splitColorToken fails here (the exact-output test above pins
       // the value level; this pins split semantics against the real parser).
       const actual = splitColorToken(token);
+      // Negative direction (issue 02): Tailwind yields no Candidate ⇔ our
+      // composeColorParts returns null. The demo-app DS registers every root and
+      // variant these fixtures use, so a Tailwind rejection is always syntactic —
+      // exactly the boundary composeColorParts enforces.
+      const composed = composeColorParts(token, TAILWIND_COLOR_PREFIXES);
+      expect(composed === null).toBe(!oracleParses);
       if (!oracleParses) {
         expect(parsed).toHaveLength(0);
         return;

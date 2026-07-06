@@ -109,8 +109,8 @@ export const EDGE_TOKENS: EdgeToken[] = [
   {
     token: "md:hover:text-primary",
     expected: { variants: ["md", "hover"], base: "text-primary", modifier: null },
-    oracleParses: false,
-    note: "two stacked variants in source order (md unregistered in the minimal DS)",
+    oracleParses: true,
+    note: "two stacked variants in source order (md registered via --breakpoint-md)",
   },
   {
     token: "text-[color:red",
@@ -159,5 +159,46 @@ export const EDGE_TOKENS: EdgeToken[] = [
     expected: { variants: ["]", "dark"], base: "bg-primary", modifier: null },
     oracleParses: false,
     note: "stray closer is ignored (no negative depth), so later ':' still splits — matches segment; old depth counter kept the whole string as base",
+  },
+
+  // --- Discarded strings: Tailwind rejects at the syntax level, so these are
+  //     not Candidates (issue 02). splitColorToken still best-effort-decomposes
+  //     them (pins the value level); composeColorParts returns null (see the
+  //     negative-direction oracle) and every rule skips them.
+  {
+    token: "bg-red-500/50/50",
+    expected: { variants: [], base: "bg-red-500/50", modifier: "50" },
+    oracleParses: false,
+    note: "two top-level Modifiers — Tailwind discards a double '/'",
+  },
+  {
+    token: "bg-red-500/",
+    expected: { variants: [], base: "bg-red-500", modifier: "" },
+    oracleParses: false,
+    note: "trailing-slash typo — the empty Modifier is not a valid named value",
+  },
+  {
+    token: "bg-[color:red]/[]",
+    expected: { variants: [], base: "bg-[color:red]", modifier: "[]" },
+    oracleParses: false,
+    note: "empty arbitrary Modifier '[]' is invalid",
+  },
+  {
+    token: "bg-[color:red]/()",
+    expected: { variants: [], base: "bg-[color:red]", modifier: "()" },
+    oracleParses: false,
+    note: "empty var-shorthand Modifier '()' is invalid",
+  },
+  {
+    token: "bg-[red;]",
+    expected: { variants: [], base: "bg-[red;]", modifier: null },
+    oracleParses: false,
+    note: "top-level ';' inside an arbitrary value — isValidArbitrary rejects",
+  },
+  {
+    token: "bg-[a{b}]",
+    expected: { variants: [], base: "bg-[a{b}]", modifier: null },
+    oracleParses: false,
+    note: "'{}' inside an arbitrary value — isValidArbitrary rejects",
   },
 ];

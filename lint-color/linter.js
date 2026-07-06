@@ -37,6 +37,8 @@ export function createLinter(config, tokens, ansi) {
   function checkTailwindToken(rawTok) {
     const found = [];
     const parts = composeColorParts(rawTok, tokens.colorPrefixes);
+    // Not a Candidate — Tailwind would discard this string, so no rule runs.
+    if (parts === null) return found;
 
     const darkMsg = checkTokenIfEnabled(disabledRules, ruleDarkModifier, rawTok, parts, tokens, ansi, config[ruleDarkModifier.name]);
     if (darkMsg) found.push({ message: darkMsg, ruleId: ruleDarkModifier.id });

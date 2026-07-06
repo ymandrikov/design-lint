@@ -145,6 +145,23 @@ describe("no-opacity-modifier", () => {
       const result = lint(el);
       expect(result).toHaveLength(0);
     });
+
+    // issue 02 — strings Tailwind discards are not Candidates, so the rule never
+    // sees them (composeColorParts returns null and the pipeline skips them).
+    it("silent on bg-red-500/50/50 (double Modifier — discarded)", () => {
+      const el = `<div className="bg-red-500/50/50" />`;
+      expect(lint(el)).toHaveLength(0);
+    });
+
+    it("silent on bg-red-500/ (empty Modifier — discarded)", () => {
+      const el = `<div className="bg-red-500/" />`;
+      expect(lint(el)).toHaveLength(0);
+    });
+
+    it("silent on bg-red-500/[] and bg-red-500/() (empty arbitrary Modifiers — discarded)", () => {
+      expect(lint(`<div className="bg-red-500/[]" />`)).toHaveLength(0);
+      expect(lint(`<div className="bg-red-500/()" />`)).toHaveLength(0);
+    });
   });
 
   describe("escaping", () => {

@@ -27,7 +27,9 @@ import { RAW_COLOR_RE } from "./no-raw-css-color.js";
 // `bg-${color}`) or a spectral-prefixed trailing dash ("bg-red-" from
 // `bg-red-${shade}`) still counts.
 function isColorToken(tok, tokens) {
-  const { colorPrefix, colorPart } = composeColorParts(tok, tokens.colorPrefixes);
+  const parts = composeColorParts(tok, tokens.colorPrefixes);
+  if (parts === null) return false; // not a Candidate — Tailwind discards it
+  const { colorPrefix, colorPart } = parts;
   if (!colorPrefix) return false;
 
   if (!colorPart) return true; // "bg-" fragment from a template literal
