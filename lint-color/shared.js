@@ -1,21 +1,17 @@
-// Shared utilities and Tailwind constants for lint-color rules.
-
-// All Tailwind v3/v4 built-in palette color names (the ones with numeric scale shades).
-export const TAILWIND_SPECTRAL_COLORS = new Set([
-  "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal",
-  "cyan", "sky", "blue", "indigo", "violet", "purple", "fuchsia", "pink", "rose",
-  "slate", "gray", "zinc", "neutral", "stone",
-]);
-
-// Tailwind utility prefixes that carry a color value.
-export const TAILWIND_COLOR_PREFIXES = [
-  "bg", "text", "border", "ring-offset", "ring", "fill", "stroke",
-  "from", "to", "via", "divide", "placeholder",
-  "caret", "accent", "outline", "decoration", "shadow",
-];
+// Shared utilities for lint-color rules.
 
 import { readdirSync } from "node:fs";
 import { extname, join } from "node:path";
+
+import { splitColorToken } from "./classify.js";
+
+// The spectral-color and color-prefix constant sets now live in the
+// classification module (classify.js), which owns the color vocabulary.
+// Re-exported here so existing importers keep working.
+export {
+  TAILWIND_SPECTRAL_COLORS,
+  TAILWIND_COLOR_PREFIXES,
+} from "./classify.js";
 
 export const isTTY = process.stdout.isTTY;
 export const red = (s) => (isTTY ? `\x1b[31m${s}\x1b[0m` : s);
@@ -75,14 +71,17 @@ export function isStorybookFile(filePath) {
   );
 }
 
-// Strip responsive/state variant prefixes: "hover:bg-red" → "bg-red"
-// Strip Tailwind important modifier.
+// Strip Tailwind variant prefixes and the important marker, returning the base
+// with any Modifier still attached: "hover:!bg-red/50" → "bg-red/50".
+//
+// DEPRECATED — a thin wrapper over the bracket-aware splitColorToken so current
+// call sites stop splitting variants on a bracketed ":" without a signature
+// change (finding #5). Callers still re-split the result on "/", so a base that
+// itself contains a slash isn't fully preserved until callers consume
+// splitColorToken parts directly in v1.1, when this wrapper is deleted.
 export function normalizeTwToken(tok) {
-  const colon = tok.lastIndexOf(":");
-  let t = colon >= 0 ? tok.slice(colon + 1) : tok;
-  if (t.startsWith("!")) t = t.slice(1);
-  if (t.endsWith("!")) t = t.slice(0, -1);
-  return t;
+  const { base, modifier } = splitColorToken(tok);
+  return modifier === null ? base : `${base}/${modifier}`;
 }
 
 // Extract string literal contents from a single source line.

@@ -56,6 +56,32 @@ function checkCss(line: string, rules: Rules) {
   return createLinter(rules, minimalTokens, ansi).lintCssSource(line, false).violations;
 }
 
+// Finding #5 — bracketed candidates must reach the pipeline uncorrupted.
+// Before the bracket-aware splitter, normalizeTwToken split on the LAST ":",
+// so an arbitrary value's inner colon mangled the token: "text-[x:bg-nope]"
+// became "bg-nope]", which false-fired no-undefined-token with a garbage
+// message. The base must be kept whole so the inner ":" is never a variant
+// separator (out of scope: making rules FIRE on named colors in arbitrary
+// values — that is de-corrupted only here).
+describe("bracket-aware token splitting (finding #5)", () => {
+  const enabled = { "no-undefined-token": { enabled: true } };
+
+  it("does not corrupt an arbitrary value whose inner colon tail looks like a color class", () => {
+    const el = `<div className="text-[x:bg-nope]" />`;
+    expect(checkTailwind(el, enabled)).toHaveLength(0);
+  });
+
+  it("keeps text-[color:red] whole — no variant split on the inner colon", () => {
+    const el = `<div className="text-[color:red]" />`;
+    expect(checkTailwind(el, enabled)).toHaveLength(0);
+  });
+
+  it("still resolves a genuinely undefined token behind the same prefix", () => {
+    const el = `<div className="text-nope" />`;
+    expect(checkTailwind(el, enabled)).toHaveLength(1);
+  });
+});
+
 describe("linter gating — per-rule enable/disable via config", () => {
   describe("no-opacity-modifier", () => {
     const el = `<div className="bg-primary/50" />`;
