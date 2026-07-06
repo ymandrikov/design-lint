@@ -48,11 +48,11 @@ export function checkTokenIfEnabled(disabledRules, ruleModule, rawTok, parts, to
   return ruleModule.checkToken(rawTok, parts, { tokens, ansi, ruleConfig });
 }
 
-// Run a checkLine-based rule against a single CSS line.
+// Run a checkValue-based rule against a single CSS declaration value.
 // Returns null immediately if the rule name is in disabledRules.
-export function checkLineIfEnabled(disabledRules, ruleModule, line, ansi) {
+export function checkValueIfEnabled(disabledRules, ruleModule, value, ansi) {
   if (disabledRules.has(ruleModule.name)) return null;
-  return ruleModule.checkLine(line, { ansi });
+  return ruleModule.checkValue(value, { ansi });
 }
 
 export function getAllFiles(dir, ...exts) {

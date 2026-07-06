@@ -25,7 +25,7 @@ export type ColorParts = {
 };
 
 export type LintSourceFn = (source: string, filePath: string, ctx: LintCtx) => void;
-export type CheckLineFn = (line: string, ctx: { ansi: Ansi }) => string | null;
+export type CheckValueFn = (value: string, ctx: { ansi: Ansi }) => string | null;
 export type CheckTokenFn = (
   rawTok: string,
   parts: ColorParts,
@@ -36,7 +36,7 @@ export type RuleModule = {
   id: number;
   name: string;
   lintSource?: LintSourceFn;
-  checkLine?: CheckLineFn;
+  checkValue?: CheckValueFn;
   checkToken?: CheckTokenFn;
 };
 

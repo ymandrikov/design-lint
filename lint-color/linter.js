@@ -1,9 +1,11 @@
 // Core linting logic — operates on in-memory source strings.
 // index.js is the file-reading entry point; tests import createLinter directly.
 
+import postcss from "postcss";
+
 import {
   buildDisabledRules,
-  checkLineIfEnabled,
+  checkValueIfEnabled,
   checkTokenIfEnabled,
   extractStringLiterals,
   lintSourceIfEnabled,
@@ -126,41 +128,46 @@ export function createLinter(config, tokens, ansi) {
     },
 
     // Checks CSS source for raw color values and Tailwind tokens in @apply directives.
+    // Walks the PostCSS CST so color detection sees only declaration values and
+    // @apply params — never selectors or at-rule preludes (findings #7, #8).
     // Returns { violations: { line, message, ruleId }[], ignores: number[] }
     lintCssSource(source, isExempt) {
       const violations = [];
       const ignores = [];
-      const lines = source.split("\n");
-      let inComment = false;
 
-      for (let i = 0; i < lines.length; i++) {
-        const lineNum = i + 1;
-        let line = lines[i];
-
-        if (inComment) {
-          if (line.includes("*/")) inComment = false;
-          continue;
-        }
-        const ignored = line.includes("/* color-lint-ignore */");
-        if (line.includes("/*")) {
-          inComment = !line.includes("*/");
-          line = line.replace(/\/\*.*?\*\//g, "").replace(/\/\*.*$/, "");
-        }
-
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith("//")) continue;
-        if (ignored) { ignores.push(lineNum); continue; }
-
-        if (!isExempt) {
-          const applyMatch = trimmed.match(/^@apply\s+(.+?);?\s*$/);
-          if (applyMatch) {
-            violations.push(...checkTailwindClasses(applyMatch[1], lineNum));
-          }
-
-          const rawCssMsg = checkLineIfEnabled(disabledRules, ruleRawCssColor, line, ansi);
-          if (rawCssMsg) violations.push({ line: lineNum, message: rawCssMsg, ruleId: ruleRawCssColor.id });
-        }
+      let root;
+      try {
+        root = postcss.parse(source);
+      } catch {
+        // Malformed CSS — nothing structural to walk. Report nothing rather
+        // than fall back to the line scanner this replaced.
+        return { violations, ignores };
       }
+
+      // A `/* color-lint-ignore */` comment suppresses violations on its own
+      // line (matching the previous line-based behaviour) and is counted.
+      const ignoredLines = new Set();
+      root.walkComments((comment) => {
+        if (comment.text.trim() !== "color-lint-ignore") return;
+        const line = comment.source?.start?.line;
+        if (line) { ignoredLines.add(line); ignores.push(line); }
+      });
+
+      // Exempt (color token) files still count ignores but skip color rules.
+      if (isExempt) return { violations, ignores };
+
+      root.walkDecls((decl) => {
+        const line = decl.source?.start?.line;
+        if (line && ignoredLines.has(line)) return;
+        const msg = checkValueIfEnabled(disabledRules, ruleRawCssColor, decl.value, ansi);
+        if (msg) violations.push({ line, message: msg, ruleId: ruleRawCssColor.id });
+      });
+
+      root.walkAtRules("apply", (atRule) => {
+        const line = atRule.source?.start?.line;
+        if (line && ignoredLines.has(line)) return;
+        violations.push(...checkTailwindClasses(atRule.params, line));
+      });
 
       return { violations, ignores };
     },

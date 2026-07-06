@@ -1,0 +1,27 @@
+{
+  "name": "design-lint",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Design-system linter — color rules first. Sandbox for a future publishable package.",
+  "type": "module",
+  "engines": {
+    "node": "^26.1.0"
+  },
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint:demo": "node lint-color/index.js fixtures/demo-app"
+  },
+  "dependencies": {
+    "@types/node": "^26.1.0",
+    "postcss": "^8.5.16",
+    "postcss-value-parser": "^4.2.0",
+    "tailwindcss": "^4.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  }
+}
