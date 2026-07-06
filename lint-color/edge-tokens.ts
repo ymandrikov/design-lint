@@ -161,6 +161,47 @@ export const EDGE_TOKENS: EdgeToken[] = [
     note: "stray closer is ignored (no negative depth), so later ':' still splits — matches segment; old depth counter kept the whole string as base",
   },
 
+  // --- Arbitrary-property candidates (issue 05): the whole base is a
+  //     "[prop:value]" group, so there is no color prefix. parseCandidate emits
+  //     an `arbitrary` Candidate with no `root`, so the oracle skips the
+  //     root-agreement check (see the oracle test).
+  {
+    token: "[color:red]",
+    expected: { variants: [], base: "[color:red]", modifier: null },
+    oracleParses: true,
+    note: "arbitrary-property candidate — property color, literal value",
+  },
+  {
+    token: "[background-color:#123]",
+    expected: { variants: [], base: "[background-color:#123]", modifier: null },
+    oracleParses: true,
+    note: "arbitrary-property candidate — hex value behind a color property",
+  },
+  {
+    token: "[--my-color:red]",
+    expected: { variants: [], base: "[--my-color:red]", modifier: null },
+    oracleParses: true,
+    note: "custom property leads with '-' — a valid arbitrary-property name",
+  },
+  {
+    token: "[color:var(--color-primary)]",
+    expected: { variants: [], base: "[color:var(--color-primary)]", modifier: null },
+    oracleParses: true,
+    note: "var reference behind a color property (classifies var)",
+  },
+  {
+    token: "[margin:4px]",
+    expected: { variants: [], base: "[margin:4px]", modifier: null },
+    oracleParses: true,
+    note: "non-color arbitrary property — a Candidate, but invisible to color rules",
+  },
+  {
+    token: "dark:[color:red]",
+    expected: { variants: ["dark"], base: "[color:red]", modifier: null },
+    oracleParses: true,
+    note: "Tailwind variant on an arbitrary-property candidate stays intact",
+  },
+
   // --- Discarded strings: Tailwind rejects at the syntax level, so these are
   //     not Candidates (issue 02). splitColorToken still best-effort-decomposes
   //     them (pins the value level); composeColorParts returns null (see the
@@ -200,5 +241,29 @@ export const EDGE_TOKENS: EdgeToken[] = [
     expected: { variants: [], base: "bg-[a{b}]", modifier: null },
     oracleParses: false,
     note: "'{}' inside an arbitrary value — isValidArbitrary rejects",
+  },
+  {
+    token: "[Color:red]",
+    expected: { variants: [], base: "[Color:red]", modifier: null },
+    oracleParses: false,
+    note: "arbitrary-property name must start a-z or '-' — uppercase is not a Candidate",
+  },
+  {
+    token: "[color:]",
+    expected: { variants: [], base: "[color:]", modifier: null },
+    oracleParses: false,
+    note: "empty arbitrary-property value — not a Candidate",
+  },
+  {
+    token: "[foo]",
+    expected: { variants: [], base: "[foo]", modifier: null },
+    oracleParses: false,
+    note: "arbitrary-property shape with no ':' separator — not a Candidate",
+  },
+  {
+    token: "[0color:red]",
+    expected: { variants: [], base: "[0color:red]", modifier: null },
+    oracleParses: false,
+    note: "arbitrary-property name must not start with a digit — not a Candidate",
   },
 ];

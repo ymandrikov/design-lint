@@ -44,6 +44,16 @@ describe("no-var-color", () => {
       // Clean var reference — a var verdict, so no-var-color fires.
       expect(lint(`<div className="bg-[var(--my_var)]" />`)).toHaveLength(1);
     });
+
+    it("reports a var behind a color arbitrary property ([color:var(--color-primary)])", () => {
+      const result = lint(`<div className="[color:var(--color-primary)]" />`);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toContain("[color:var(--color-primary)]");
+    });
+
+    it("reports a var behind a custom-property arbitrary property ([--my-color:var(--x)])", () => {
+      expect(lint(`<div className="[--my-color:var(--x)]" />`)).toHaveLength(1);
+    });
   });
 
   describe("non-violations", () => {
@@ -66,6 +76,14 @@ describe("no-var-color", () => {
 
     it("does not fire on an explicit non-color var typehint (bg-(length:--x))", () => {
       expect(lint(`<div className="bg-(length:--x)" />`)).toHaveLength(0);
+    });
+
+    it("does not fire on a literal color behind a color property (owned by no-raw-css-color)", () => {
+      expect(lint(`<div className="[color:red]" />`)).toHaveLength(0);
+    });
+
+    it("does not fire on a var behind a non-color property ([margin:var(--x)])", () => {
+      expect(lint(`<div className="[margin:var(--x)]" />`)).toHaveLength(0);
     });
   });
 

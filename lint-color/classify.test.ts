@@ -6,6 +6,7 @@ import { __unstable__loadDesignSystem } from "tailwindcss";
 
 import {
   classifyColorPart,
+  classifyParts,
   composeColorParts,
   findColorPrefix,
   splitColorToken,
@@ -147,6 +148,81 @@ describe("composeColorParts — discarded strings return null", () => {
   });
 });
 
+describe("composeColorParts — arbitrary-property candidates (issue 05)", () => {
+  const parts = (tok: string) => composeColorParts(tok, TAILWIND_COLOR_PREFIXES);
+
+  it("exposes the property and value; color prefix stays null", () => {
+    expect(parts("[color:red]")).toMatchObject({
+      base: "[color:red]",
+      colorPrefix: null,
+      colorPart: null,
+      arbitraryProperty: "color",
+      arbitraryValue: "red",
+    });
+    expect(parts("[--my-color:red]")).toMatchObject({
+      arbitraryProperty: "--my-color",
+      arbitraryValue: "red",
+    });
+  });
+
+  it("exposes non-color properties too (classification does the color gating)", () => {
+    expect(parts("[margin:4px]")).toMatchObject({
+      arbitraryProperty: "margin",
+      arbitraryValue: "4px",
+    });
+  });
+
+  it("leaves the fields null for a prefixed utility", () => {
+    expect(parts("bg-primary")).toMatchObject({
+      arbitraryProperty: null,
+      arbitraryValue: null,
+    });
+  });
+
+  it("returns null for a malformed arbitrary property (not a Candidate)", () => {
+    expect(parts("[Color:red]")).toBeNull(); // uppercase start
+    expect(parts("[0color:red]")).toBeNull(); // digit start
+    expect(parts("[color:]")).toBeNull(); // empty value
+    expect(parts("[:red]")).toBeNull(); // empty property
+    expect(parts("[foo]")).toBeNull(); // no ':' separator
+  });
+});
+
+describe("classifyParts — routes both spellings to one verdict (issue 05)", () => {
+  const tokens = {
+    semanticSet: new Set(["primary"]),
+    spectralSet: TAILWIND_SPECTRAL_COLORS,
+  };
+  const verdict = (tok: string) =>
+    classifyParts(composeColorParts(tok, TAILWIND_COLOR_PREFIXES), tokens);
+
+  it("classifies a literal color behind a color property as raw", () => {
+    expect(verdict("[color:red]")).toBe("raw");
+    expect(verdict("[background-color:#123]")).toBe("raw");
+    expect(verdict("[--my-color:red]")).toBe("raw");
+    expect(verdict("[color:var(--x,red)]")).toBe("raw");
+  });
+
+  it("classifies a clean var reference behind a color property as var", () => {
+    expect(verdict("[color:var(--color-primary)]")).toBe("var");
+    expect(verdict("[background-color:var(--color-primary)]")).toBe("var");
+    expect(verdict("[--my-color:var(--x)]")).toBe("var");
+  });
+
+  it("classifies a non-color property as null (invisible to color rules)", () => {
+    expect(verdict("[margin:4px]")).toBeNull();
+    expect(verdict("[display:grid]")).toBeNull();
+    expect(verdict("[margin:var(--x)]")).toBeNull();
+  });
+
+  it("still routes a prefixed utility through classifyColorPart", () => {
+    expect(verdict("bg-primary")).toBe("semantic");
+    expect(verdict("bg-[red]")).toBe("raw");
+    expect(verdict("bg-[var(--x)]")).toBe("var");
+    expect(verdict("bg-red-500")).toBe("spectral");
+  });
+});
+
 describe("findColorPrefix — longest match", () => {
   it("prefers ring-offset over ring", () => {
     expect(findColorPrefix("ring-offset-blue-200", TAILWIND_COLOR_PREFIXES)).toBe(
@@ -212,10 +288,14 @@ describe("oracle — splitter agrees with Tailwind parseCandidate", () => {
       // Modifier presence agrees
       expect(actual.modifier === null).toBe(pc.modifier === null);
       // base carries Tailwind's utility root (root is syntactic — prefix only;
-      // value-level agreement is the exact-output test's job)
-      expect(
-        actual.base === pc.root || actual.base.startsWith(pc.root + "-"),
-      ).toBe(true);
+      // value-level agreement is the exact-output test's job). An arbitrary-
+      // property Candidate ([color:red]) has no `root`, so there is nothing to
+      // compare — its base is the whole bracket group.
+      if (pc.root !== undefined) {
+        expect(
+          actual.base === pc.root || actual.base.startsWith(pc.root + "-"),
+        ).toBe(true);
+      }
     });
   }
 });

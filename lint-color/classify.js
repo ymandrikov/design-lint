@@ -32,6 +32,20 @@ export const TAILWIND_STATIC_COLORS = new Set([
   "black", "white", "transparent", "current", "inherit",
 ]);
 
+// CSS properties that carry a color value, for whole-base arbitrary-property
+// candidates ("[color:red]", "[background-color:#123]"). Seeded from the
+// properties no-style-color forbids inline (`color`, `backgroundColor`) in their
+// CSS kebab spelling. Custom properties (`--*`) are always in the set: a custom
+// property can hold a color, and a token must have exactly one sanctioned
+// spelling — the utility class — so its variable form is a violation too.
+export const CSS_COLOR_PROPERTIES = new Set(["color", "background-color"]);
+
+// isColorProperty(property) → boolean. A CSS declaration property that can carry
+// color for the purposes of arbitrary-property candidates.
+function isColorProperty(property) {
+  return property.startsWith("--") || CSS_COLOR_PROPERTIES.has(property.toLowerCase());
+}
+
 // Tailwind utility prefixes that carry a color value.
 export const TAILWIND_COLOR_PREFIXES = [
   "bg", "text", "border", "ring-offset", "ring", "fill", "stroke",
@@ -201,6 +215,63 @@ function classifyVarReference(value) {
   return "var";
 }
 
+// parseArbitraryProperty(base) → { property, value } | null
+//
+// A Tailwind arbitrary-property candidate is a base whose whole form is a bracket
+// group — "[color:red]", "[--my-color:red]" — with no utility prefix. Mirrors
+// parseCandidate's arbitrary-property branch: the base must be bracket-wrapped,
+// the property must start with a-z or "-" (so "[Color:red]", "[0color:red]" are
+// rejected), a first ":" separates property from value, and the value is
+// non-empty. Returns null when base is not an arbitrary property OR is a
+// malformed one — the caller treats a malformed shape as a discarded candidate.
+//
+// The value is returned undecoded (underscores intact); classifyColorValue
+// decodes it, matching how the value is stored on a Candidate.
+export function parseArbitraryProperty(base) {
+  if (base.length < 2 || base[0] !== "[" || base[base.length - 1] !== "]") return null;
+  const c = base.charCodeAt(1);
+  // Property name must start with a-z or "-" (custom properties lead with "--").
+  if (c !== 0x2d && !(c >= 0x61 && c <= 0x7a)) return null;
+  const colon = base.indexOf(":");
+  if (colon === -1) return null;
+  const property = base.slice(1, colon);
+  const value = base.slice(colon + 1, -1);
+  if (value.length === 0) return null;
+  return { property, value };
+}
+
+// classifyColorValue(rawValue) → "raw" | "var" | null
+//
+// The value side of an arbitrary-property candidate ("[prop:value]" → value),
+// undecoded. Classified in the same order as an arbitrary utility value
+// (classifyArbitraryColor): decode underscores → peel a dataType typehint →
+// var-shape → is-color. Unlike a utility value there is no paren shorthand — an
+// arbitrary property spells a variable reference as `var(--x)`, never `(--x)`.
+function classifyColorValue(rawValue) {
+  const decoded = decodeArbitraryValue(rawValue);
+  const { typehint, value } = extractTypehint(decoded);
+  if (typehint !== null && typehint !== "color") return null;
+  const varVerdict = classifyVarReference(value);
+  if (varVerdict !== null) return varVerdict;
+  return isColor(value) ? "raw" : null;
+}
+
+// classifyParts(parts, tokens) → "semantic" | "spectral" | "static" | "raw" | "var" | null
+//
+// The color verdict for a decomposed Candidate, routing both spellings color can
+// take to one classifier so a rule reads a single verdict: a prefixed utility
+// ("bg-[red]", "text-primary") via its colorPart, and an arbitrary-property
+// candidate ("[color:red]") via its property + value. A non-color arbitrary
+// property ("[margin:4px]") is provably not a color and returns null, so only the
+// raw/var rules ever see a property value.
+export function classifyParts(parts, tokens) {
+  if (parts.arbitraryProperty !== null) {
+    if (!isColorProperty(parts.arbitraryProperty)) return null;
+    return classifyColorValue(parts.arbitraryValue);
+  }
+  return classifyColorPart(parts.colorPart, tokens);
+}
+
 // findColorPrefix(base, colorPrefixes) → prefix string | null
 //
 // Longest match wins regardless of array order, so "ring-offset" beats "ring"
@@ -238,6 +309,10 @@ function isDiscardedCandidate(variants, base, modifier) {
   if (segment(base, "/").length > 1) return true;
   if (modifier !== null && !isValidModifier(modifier)) return true;
   if (isArbitraryDiscarded(base)) return true;
+  // A base whose whole form is a bracket group is an arbitrary-property
+  // candidate; a malformed property name/value ("[Color:red]", "[foo]",
+  // "[color:]") makes Tailwind discard it, so it is not a Candidate.
+  if (base[0] === "[" && parseArbitraryProperty(base) === null) return true;
   return false;
 }
 
@@ -289,10 +364,19 @@ function isArbitraryDiscarded(base) {
 //   - colorPart   : the base with its color prefix removed (the empty string for
 //                   a bare "bg-" template fragment), or null when there is no
 //                   color prefix.
+//   - arbitraryProperty / arbitraryValue : the property and (undecoded) value of
+//                   a whole-base arbitrary-property candidate ("[color:red]"),
+//                   both null otherwise. Set for every valid arbitrary property,
+//                   color or not; classifyParts does the color gating. Mutually
+//                   exclusive with colorPrefix — an arbitrary property has no
+//                   utility prefix.
 export function composeColorParts(rawTok, colorPrefixes) {
   const { variants, base, modifier } = splitColorToken(rawTok);
   if (isDiscardedCandidate(variants, base, modifier)) return null;
   const colorPrefix = findColorPrefix(base, colorPrefixes ?? []);
   const colorPart = colorPrefix === null ? null : base.slice(colorPrefix.length + 1);
-  return { variants, base, modifier, colorPrefix, colorPart };
+  const arbitrary = colorPrefix === null ? parseArbitraryProperty(base) : null;
+  const arbitraryProperty = arbitrary === null ? null : arbitrary.property;
+  const arbitraryValue = arbitrary === null ? null : arbitrary.value;
+  return { variants, base, modifier, colorPrefix, colorPart, arbitraryProperty, arbitraryValue };
 }

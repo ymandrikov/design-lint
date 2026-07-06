@@ -83,6 +83,26 @@ describe("no-raw-css-color", () => {
     });
   });
 
+  describe("violations — arbitrary-property candidates (issue 05)", () => {
+    it("reports a literal color behind a color property ([color:red])", () => {
+      const result = lint(`<div className="[color:red]" />`);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toContain("[color:red]");
+    });
+
+    it("reports a hex value ([background-color:#123])", () => {
+      expect(lint(`<div className="[background-color:#123]" />`)).toHaveLength(1);
+    });
+
+    it("reports a custom-property color ([--my-color:red])", () => {
+      expect(lint(`<div className="[--my-color:red]" />`)).toHaveLength(1);
+    });
+
+    it("fires behind a Tailwind variant (dark:[color:red])", () => {
+      expect(lint(`<div className="dark:[color:red]" />`)).toHaveLength(1);
+    });
+  });
+
   describe("non-violations", () => {
     it("allows a semantic token (no arbitrary value)", () => {
       expect(lint(`<div className="bg-primary" />`)).toHaveLength(0);
@@ -106,6 +126,15 @@ describe("no-raw-css-color", () => {
 
     it("allows an explicit non-color typehint (bg-[length:200px])", () => {
       expect(lint(`<div className="bg-[length:200px]" />`)).toHaveLength(0);
+    });
+
+    it("allows a non-color arbitrary property ([margin:4px], [display:grid])", () => {
+      expect(lint(`<div className="[margin:4px]" />`)).toHaveLength(0);
+      expect(lint(`<div className="[display:grid]" />`)).toHaveLength(0);
+    });
+
+    it("allows a clean var behind a color property (owned by no-var-color)", () => {
+      expect(lint(`<div className="[color:var(--color-primary)]" />`)).toHaveLength(0);
     });
 
     it("does not scan style attribute values via the token pipeline", () => {

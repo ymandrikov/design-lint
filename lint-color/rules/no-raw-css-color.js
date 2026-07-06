@@ -3,7 +3,7 @@
 
 import valueParser from "postcss-value-parser";
 
-import { classifyColorPart } from "../classify.js";
+import { classifyParts } from "../classify.js";
 import { isColor } from "../vendor/is-color.js";
 
 export const id = 2;
@@ -11,12 +11,13 @@ export const name = "no-raw-css-color";
 
 // checkToken(rawTok, parts, ctx) → message string or null.
 // Flags a literal color hiding in a Tailwind arbitrary value (bg-[#ff0000],
-// bg-[red], text-[color:red], bg-[var(--x,red)]). It consumes the shared
-// classification (verdict "raw") instead of re-scanning the token — one
-// definition of "literal color" for classes and CSS declarations alike.
+// bg-[red], text-[color:red], bg-[var(--x,red)]) or an arbitrary-property
+// candidate ([color:red], [background-color:#123], [--my-color:red]). It
+// consumes the shared classification (verdict "raw") instead of re-scanning the
+// token — one definition of "literal color" for classes and CSS declarations.
 export function checkToken(rawTok, parts, ctx) {
   const { tokens, ansi } = ctx;
-  if (classifyColorPart(parts.colorPart, tokens) !== "raw") return null;
+  if (classifyParts(parts, tokens) !== "raw") return null;
   return `${ansi.red(rawTok)} — raw color in arbitrary value; use a ${ansi.blue("var(--color-*)")} token`;
 }
 
