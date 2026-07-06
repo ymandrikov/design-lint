@@ -82,6 +82,28 @@ describe("bracket-aware token splitting (finding #5)", () => {
   });
 });
 
+// Quoted content inside an arbitrary value splits exactly as Tailwind splits it
+// (vendored segment, ADR 0002): the quoted ":" is neither a variant separator
+// nor corrupted into a garbage base.
+describe("quote-aware token splitting (segment parity)", () => {
+  const enabled = {
+    "no-undefined-token": { enabled: true },
+    "no-spectral-color": { enabled: true },
+    "no-opacity-modifier": { enabled: true },
+    "no-dark-variant": { enabled: true },
+  };
+
+  it("bg-[url('a:b.png')] passes end-to-end with no false violation", () => {
+    const el = `<div className="bg-[url('a:b.png')]" />`;
+    expect(checkTailwind(el, enabled)).toHaveLength(0);
+  });
+
+  it("a quoted '/' is not a Modifier — no opacity violation fires", () => {
+    const el = `<div className="bg-[url('a/b.png')]" />`;
+    expect(checkTailwind(el, enabled)).toHaveLength(0);
+  });
+});
+
 describe("linter gating — per-rule enable/disable via config", () => {
   describe("no-opacity-modifier", () => {
     const el = `<div className="bg-primary/50" />`;

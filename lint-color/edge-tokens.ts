@@ -104,7 +104,7 @@ export const EDGE_TOKENS: EdgeToken[] = [
     token: "text-[color:red]/50",
     expected: { variants: [], base: "text-[color:red]", modifier: "50" },
     oracleParses: true,
-    note: "Modifier after a closed bracket group is depth-0",
+    note: "Modifier after a closed bracket group is top-level",
   },
   {
     token: "md:hover:text-primary",
@@ -117,5 +117,47 @@ export const EDGE_TOKENS: EdgeToken[] = [
     expected: { variants: [], base: "text-[color:red", modifier: null },
     oracleParses: false,
     note: "unbalanced bracket — best-effort, never throws (parseCandidate rejects)",
+  },
+  {
+    token: "bg-[url('a:b.png')]",
+    expected: { variants: [], base: "bg-[url('a:b.png')]", modifier: null },
+    oracleParses: true,
+    note: "quoted ':' inside an arbitrary value is not a variant separator",
+  },
+  {
+    token: "bg-[url('a/b.png')]/50",
+    expected: { variants: [], base: "bg-[url('a/b.png')]", modifier: "50" },
+    oracleParses: true,
+    note: "quoted '/' inside an arbitrary value is not a Modifier separator",
+  },
+  {
+    token: 'hover:bg-[url("a:b/c.png")]',
+    expected: { variants: ["hover"], base: 'bg-[url("a:b/c.png")]', modifier: null },
+    oracleParses: true,
+    note: "double-quoted ':' and '/' stay inside the base behind a variant",
+  },
+  {
+    token: String.raw`bg-[a\]b:c]`,
+    expected: { variants: [], base: String.raw`bg-[a\]b:c]`, modifier: null },
+    oracleParses: true,
+    note: "backslash-escaped ']' does not close the bracket group",
+  },
+  {
+    token: "{a:b}:bg-primary",
+    expected: { variants: ["{a:b}"], base: "bg-primary", modifier: null },
+    oracleParses: false,
+    note: "'{}' group tracked like brackets — inner ':' is not a variant separator",
+  },
+  {
+    token: "bg-[url('a.png)]/50",
+    expected: { variants: [], base: "bg-[url('a.png)]/50", modifier: null },
+    oracleParses: false,
+    note: "unmatched quote swallows the remainder, exactly as Tailwind's segment does — the '/' is not a Modifier separator (rejection of such strings is issue 02)",
+  },
+  {
+    token: "]:dark:bg-primary",
+    expected: { variants: ["]", "dark"], base: "bg-primary", modifier: null },
+    oracleParses: false,
+    note: "stray closer is ignored (no negative depth), so later ':' still splits — matches segment; old depth counter kept the whole string as base",
   },
 ];

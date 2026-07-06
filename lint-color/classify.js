@@ -9,7 +9,10 @@
 //   - the spectral-color and color-prefix constant sets.
 //
 // Pure, synchronous, no dependency on the loaded Tailwind design system.
-// Tailwind's own `parseCandidate` is used only as a test oracle (ADR 0001).
+// Tailwind's own `parseCandidate` is used only as a test oracle (ADR 0001);
+// splitting is done with the vendored `segment` primitive (ADR 0002).
+
+import { segment } from "./vendor/segment.js";
 
 // All Tailwind v3/v4 built-in palette color names (the ones with numeric scale shades).
 export const TAILWIND_SPECTRAL_COLORS = new Set([
@@ -35,32 +38,22 @@ export const TAILWIND_COLOR_PREFIXES = [
 
 // splitColorToken(rawTok) → { variants: string[], base: string, modifier: string | null }
 //
-// Bracket/paren-depth aware, so inner ":" and "/" of arbitrary values and var
-// shorthand are never mistaken for a Tailwind variant separator or a Modifier.
+// Built on Tailwind's own vendored `segment` primitive (ADR 0002), so inner ":"
+// and "/" of arbitrary values, var shorthand, quoted strings, backslash escapes,
+// and "{}" groups are never mistaken for a Tailwind variant separator or a
+// Modifier — separator scanning matches Tailwind's own segment(). Acceptance
+// still differs: we best-effort-decompose strings parseCandidate rejects (see
+// oracleParses in edge-tokens.ts; rejection is a later slice).
 //
-// Contract (locked in PRD §Implementation Decisions):
-//   1. Depth tracking counts [] and ().
-//   2. Tailwind variants: split on every depth-0 ":", returned in source order.
-//   3. Modifier: split on the last depth-0 "/"; null when absent.
-//   4. Important marker "!" (leading or trailing) stripped silently from base.
-//   5. Unbalanced brackets never throw — the remainder stays at depth > 0 and
-//      a best-effort decomposition is returned.
+// Contract:
+//   1. Tailwind variants: split on every top-level ":", returned in source order.
+//   2. Modifier: split on the last top-level "/"; null when absent.
+//   3. Important marker "!" (leading or trailing) stripped silently from base.
+//   4. Unbalanced input never throws — a best-effort decomposition is returned.
 export function splitColorToken(rawTok) {
-  // Split on depth-0 ":" — every leading segment is a Tailwind variant, the
-  // final segment carries the base and any Modifier.
-  const segments = [];
-  let depth = 0;
-  let start = 0;
-  for (let i = 0; i < rawTok.length; i++) {
-    const ch = rawTok[i];
-    if (ch === "[" || ch === "(") depth++;
-    else if (ch === "]" || ch === ")") depth--;
-    else if (ch === ":" && depth === 0) {
-      segments.push(rawTok.slice(start, i));
-      start = i + 1;
-    }
-  }
-  segments.push(rawTok.slice(start));
+  // Top-level ":" — every leading segment is a Tailwind variant, the final
+  // segment carries the base and any Modifier.
+  const segments = segment(rawTok, ":");
 
   const variants = segments.slice(0, -1);
   let rest = segments[segments.length - 1];
@@ -68,20 +61,13 @@ export function splitColorToken(rawTok) {
   // v4 important marker sits after the Modifier ("bg-primary/50!") — strip first.
   if (rest.endsWith("!")) rest = rest.slice(0, -1);
 
-  // Modifier: the last depth-0 "/" in the remaining segment.
-  let modifier = null;
-  let mdepth = 0;
-  let slash = -1;
-  for (let i = 0; i < rest.length; i++) {
-    const ch = rest[i];
-    if (ch === "[" || ch === "(") mdepth++;
-    else if (ch === "]" || ch === ")") mdepth--;
-    else if (ch === "/" && mdepth === 0) slash = i;
-  }
+  // Modifier: the last top-level "/" in the remaining segment.
+  const slashParts = segment(rest, "/");
   let base = rest;
-  if (slash !== -1) {
-    base = rest.slice(0, slash);
-    modifier = rest.slice(slash + 1);
+  let modifier = null;
+  if (slashParts.length > 1) {
+    modifier = slashParts[slashParts.length - 1];
+    base = slashParts.slice(0, -1).join("/");
   }
 
   // v3 important marker prefixes the base ("!bg-primary"); tolerate a stray
