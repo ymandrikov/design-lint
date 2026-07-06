@@ -18,6 +18,14 @@ export const TAILWIND_SPECTRAL_COLORS = new Set([
   "slate", "gray", "zinc", "neutral", "stone",
 ]);
 
+// Tailwind built-in keyword colors that carry a color value WITHOUT a numeric
+// shade (bg-black, text-white, border-transparent, ring-current). Non-semantic,
+// so forbidden like spectral colors — but classified separately because the
+// shade-scan in classifyColorPart can't see them.
+export const TAILWIND_STATIC_COLORS = new Set([
+  "black", "white", "transparent", "current", "inherit",
+]);
+
 // Tailwind utility prefixes that carry a color value.
 export const TAILWIND_COLOR_PREFIXES = [
   "bg", "text", "border", "ring-offset", "ring", "fill", "stroke",
@@ -84,19 +92,22 @@ export function splitColorToken(rawTok) {
   return { variants, base, modifier };
 }
 
-// classifyColorPart(colorPart, tokens) → "semantic" | "spectral" | "arbitrary" | null
+// classifyColorPart(colorPart, tokens) → "semantic" | "spectral" | "static" | "arbitrary" | null
 //
 // colorPart is the base with its color prefix removed (e.g. "primary",
-// "red-500", "x-red-500", "[color:red]").
+// "red-500", "x-red-500", "black", "[color:red]").
 //   - semantic  : an exact semantic-token name.
 //   - spectral  : a Tailwind palette color with a NUMERIC shade segment. The
 //                 segment scan handles compound bases like "x-red-500"
 //                 (from "divide-x-red-500") and "blue-200" alike.
+//   - static    : a Tailwind keyword color with no shade (black, white,
+//                 transparent, current, inherit).
 //   - arbitrary : an arbitrary value ("[…]") or var shorthand ("(…)").
 //   - null      : not a color (no shade, e.g. "red-foo" / "sm", or empty).
 export function classifyColorPart(colorPart, tokens) {
   if (!colorPart) return null;
   if (tokens.semanticSet?.has(colorPart)) return "semantic";
+  if (TAILWIND_STATIC_COLORS.has(colorPart)) return "static";
 
   // Arbitrary values / var shorthand are opaque — check them before the segment
   // scan, else a bracketed interior that happens to contain a "<spectral>-<digits>"

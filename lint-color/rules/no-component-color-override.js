@@ -8,26 +8,35 @@ export const name = "no-component-color-override";
 import {
   buildLineStarts,
   extractJsxOpeningTags,
-  normalizeTwToken,
   offsetToLine,
 } from "../shared.js";
+import { classifyColorPart, findColorPrefix, splitColorToken } from "../classify.js";
 import { RAW_COLOR_RE } from "./no-raw-css-color.js";
 
 // Returns true when tok applies a known semantic or spectral color via any color prefix.
 // text-sm / text-center / shadow-md → false (not a color token).
-// An empty colorPart (e.g. "bg-" from a template literal like `bg-${color}`) is flagged:
-// the color prefix alone is sufficient evidence that a color is being applied.
+// The "is this a color?" test delegates to classifyColorPart, so a spectral name
+// without a numeric shade ("bg-red-foo") is not treated as a color (finding #9).
+//
+// Template-literal fragments are the exception: the color prefix alone is
+// evidence a color is being applied, so an empty color part ("bg-" from
+// `bg-${color}`) or a spectral-prefixed trailing dash ("bg-red-" from
+// `bg-red-${shade}`) still counts.
 function isColorToken(tok, tokens) {
-  const { colorPrefixes, semanticSet, spectralSet } = tokens;
-  const base = normalizeTwToken(tok).split("/")[0];
-  const prefix = colorPrefixes.find((p) => base.startsWith(p + "-"));
+  const { base } = splitColorToken(tok);
+  const prefix = findColorPrefix(base, tokens.colorPrefixes);
   if (!prefix) return false;
+
   const colorPart = base.slice(prefix.length + 1);
-  if (!colorPart) return true; // partial token from a template literal
-  if (semanticSet.has(colorPart)) return true;
-  // Spectral: "red-500" — color name is the first segment, numeric scale follows.
-  const parts = colorPart.split("-");
-  return spectralSet.has(parts[0]) && parts.length > 1;
+  if (!colorPart) return true; // "bg-" fragment from a template literal
+  if (classifyColorPart(colorPart, tokens) !== null) return true;
+
+  // "bg-red-" fragment: the shade was interpolated away. Treat as a color when
+  // the remaining segment is a spectral color name (a dynamic spectral shade).
+  if (colorPart.endsWith("-")) {
+    return tokens.spectralSet?.has(colorPart.slice(0, -1)) ?? false;
+  }
+  return false;
 }
 
 // Returns the content between the matching braces starting at str[start] (must be '{').

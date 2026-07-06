@@ -136,6 +136,14 @@ describe("no-component-color-override", () => {
       expect(result).toHaveLength(0);
     });
 
+    // finding #9 — "red-foo" has a spectral name but no numeric shade, so it is
+    // not a spectral color; flagging it as an override was a false positive.
+    it("allows bg-red-foo (spectral name without a numeric shade)", () => {
+      const el = `<Badge className="bg-red-foo" />`;
+      const result = lint(el);
+      expect(result).toHaveLength(0);
+    });
+
     it("allows template literal with no color prefix (e.g. red-${500} is not valid Tailwind)", () => {
       // `red-${500}` has no color prefix — the correct form would be `bg-red-${shade}`
       const el = `<Button className={\`red-\${500}\`} />`;

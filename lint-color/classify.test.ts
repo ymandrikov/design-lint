@@ -55,6 +55,14 @@ describe("classifyColorPart", () => {
     expect(classifyColorPart("red", tokens)).toBeNull();
   });
 
+  it("recognizes Tailwind keyword colors without a shade as static", () => {
+    expect(classifyColorPart("black", tokens)).toBe("static");
+    expect(classifyColorPart("white", tokens)).toBe("static");
+    expect(classifyColorPart("transparent", tokens)).toBe("static");
+    expect(classifyColorPart("current", tokens)).toBe("static");
+    expect(classifyColorPart("inherit", tokens)).toBe("static");
+  });
+
   it("recognizes arbitrary values and var shorthand", () => {
     expect(classifyColorPart("[color:red]", tokens)).toBe("arbitrary");
     expect(classifyColorPart("[#123456]", tokens)).toBe("arbitrary");
