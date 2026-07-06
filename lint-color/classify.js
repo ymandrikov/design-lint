@@ -53,6 +53,10 @@ export const TAILWIND_COLOR_PREFIXES = [
   "caret", "accent", "outline", "decoration", "shadow",
 ];
 
+// A numeric Tailwind shade segment ("500") and a leading `var(` reference.
+const SHADE_RE = /^\d+$/;
+const VAR_REF_RE = /^var\(/i;
+
 // splitColorToken(rawTok) → { variants: string[], base: string, modifier: string | null }
 //
 // Built on Tailwind's own vendored `segment` primitive (ADR 0002), so inner ":"
@@ -123,13 +127,13 @@ export function classifyColorPart(colorPart, tokens) {
   // "<spectral>-<digits>" run (e.g. "(--red-500-rgb)") would be misread as
   // spectral. Order inside: decode underscores → dataType typehint → var-shape
   // → is-color (the one definition of "literal color").
-  if (colorPart.includes("[") || colorPart.includes("(")) {
+  if (colorPart[0] === "[" || colorPart[0] === "(") {
     return classifyArbitraryColor(colorPart);
   }
 
   const segs = colorPart.split("-");
   for (let i = 0; i < segs.length - 1; i++) {
-    if (tokens.spectralSet?.has(segs[i]) && /^\d+$/.test(segs[i + 1])) {
+    if (tokens.spectralSet?.has(segs[i]) && SHADE_RE.test(segs[i + 1])) {
       return "spectral";
     }
   }
@@ -164,18 +168,10 @@ function classifyArbitraryColor(colorPart) {
 
   if (colorPart[0] !== "[" || last !== "]") return null;
 
-  const decoded = decodeArbitraryValue(colorPart.slice(1, -1));
-  const { typehint, value } = extractTypehint(decoded);
-
-  // An explicit non-color dataType (`length:`, `image:`, `url:`, …) is provably
-  // not a color; only `color:` keeps the value in color context.
-  if (typehint !== null && typehint !== "color") return null;
-
-  // A CSS-variable reference: `var` unless it smuggles a literal-color fallback.
-  const varVerdict = classifyVarReference(value);
-  if (varVerdict !== null) return varVerdict;
-
-  return isColor(value) ? "raw" : null;
+  // A bracketed arbitrary value classifies exactly like an arbitrary-property
+  // value once the brackets are peeled — same decode → typehint → var → is-color
+  // order, owned by classifyColorValue.
+  return classifyColorValue(colorPart.slice(1, -1));
 }
 
 // extractTypehint(value) → { typehint: string | null, value: string }
@@ -205,7 +201,7 @@ function extractTypehint(value) {
 // (`var(--x, var(--y, red))`) is still caught. Anything that is not a var
 // reference returns null (the caller falls back to is-color).
 function classifyVarReference(value) {
-  if (!/^var\(/i.test(value) || value[value.length - 1] !== ")") return null;
+  if (!VAR_REF_RE.test(value) || value[value.length - 1] !== ")") return null;
   const inner = value.slice(4, -1);
   const args = segment(inner, ",");
   if (args.length >= 2) {
@@ -301,7 +297,7 @@ export function findColorPrefix(base, colorPrefixes) {
 //     ("bg-primary/", "…/[]", "…/()");
 //   - an arbitrary value / var shorthand in the base that is unclosed, empty,
 //     or fails isValidArbitrary ("text-[color:red", "bg-[red;]", "bg-[a{b}]").
-function isDiscardedCandidate(variants, base, modifier) {
+function isDiscardedCandidate(variants, base, modifier, arbitrary) {
   for (const v of variants) {
     if (!isValidArbitrary(v)) return true;
   }
@@ -311,8 +307,9 @@ function isDiscardedCandidate(variants, base, modifier) {
   if (isArbitraryDiscarded(base)) return true;
   // A base whose whole form is a bracket group is an arbitrary-property
   // candidate; a malformed property name/value ("[Color:red]", "[foo]",
-  // "[color:]") makes Tailwind discard it, so it is not a Candidate.
-  if (base[0] === "[" && parseArbitraryProperty(base) === null) return true;
+  // "[color:]") makes Tailwind discard it, so it is not a Candidate. The parse
+  // is threaded in from composeColorParts so the base is parsed only once.
+  if (base[0] === "[" && arbitrary === null) return true;
   return false;
 }
 
@@ -321,15 +318,20 @@ function isDiscardedCandidate(variants, base, modifier) {
 // Modifier need only be non-empty (the trailing-slash typo "bg-primary/" yields
 // the empty string here). Full IS_VALID_NAMED_VALUE matching is out of scope.
 function isValidModifier(mod) {
-  if (mod[0] === "[" && mod[mod.length - 1] === "]") {
-    const inner = mod.slice(1, -1);
-    return inner.trim().length > 0 && isValidArbitrary(inner);
-  }
-  if (mod[0] === "(" && mod[mod.length - 1] === ")") {
-    const inner = mod.slice(1, -1);
-    return inner.trim().length > 0 && isValidArbitrary(inner);
+  const first = mod[0];
+  const last = mod[mod.length - 1];
+  if ((first === "[" && last === "]") || (first === "(" && last === ")")) {
+    return isValidArbitraryGroup(mod.slice(1, -1));
   }
   return mod.length > 0;
+}
+
+// isValidArbitraryGroup(inner) → boolean. The interior of a bracket/paren group
+// is well-formed when it is non-empty and passes isValidArbitrary (balanced
+// brackets, no top-level ";"). The single predicate behind both a Modifier group
+// and an arbitrary base group.
+function isValidArbitraryGroup(inner) {
+  return inner.trim().length > 0 && isValidArbitrary(inner);
 }
 
 // isArbitraryDiscarded(base) → boolean. True when the base carries arbitrary
@@ -344,10 +346,7 @@ function isArbitraryDiscarded(base) {
   const closeCh = base[open] === "[" ? "]" : ")";
   // Must close with the matching bracket as the final character.
   if (base[base.length - 1] !== closeCh) return true;
-  const inner = base.slice(open + 1, -1);
-  if (inner.trim().length === 0) return true;
-  if (!isValidArbitrary(inner)) return true;
-  return false;
+  return !isValidArbitraryGroup(base.slice(open + 1, -1));
 }
 
 // composeColorParts(rawTok, colorPrefixes) → { variants, base, modifier, colorPrefix, colorPart } | null
@@ -372,10 +371,13 @@ function isArbitraryDiscarded(base) {
 //                   utility prefix.
 export function composeColorParts(rawTok, colorPrefixes) {
   const { variants, base, modifier } = splitColorToken(rawTok);
-  if (isDiscardedCandidate(variants, base, modifier)) return null;
+  // Parse the arbitrary-property shape once: an arbitrary property always leads
+  // with "[" and never carries a utility color prefix, so this is the only parse
+  // both the discard check and the returned parts need.
+  const arbitrary = base[0] === "[" ? parseArbitraryProperty(base) : null;
+  if (isDiscardedCandidate(variants, base, modifier, arbitrary)) return null;
   const colorPrefix = findColorPrefix(base, colorPrefixes ?? []);
   const colorPart = colorPrefix === null ? null : base.slice(colorPrefix.length + 1);
-  const arbitrary = colorPrefix === null ? parseArbitraryProperty(base) : null;
   const arbitraryProperty = arbitrary === null ? null : arbitrary.property;
   const arbitraryValue = arbitrary === null ? null : arbitrary.value;
   return { variants, base, modifier, colorPrefix, colorPart, arbitraryProperty, arbitraryValue };
