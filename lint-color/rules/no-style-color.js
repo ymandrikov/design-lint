@@ -4,50 +4,37 @@
 export const id = 1;
 export const name = "no-style-color";
 
-const STYLE_OPEN_RE = /\bstyle=\{/;
-// Matches color: and backgroundColor: as JS keys inside object literals.
-// Does NOT match --color-* custom properties (leading - excluded by lookbehind).
-const STYLE_COLOR_PROP_RE = /(?<![`'"-])(?<!\w)\b(color|backgroundColor)\s*:/;
+import {
+  parseSource,
+  walk,
+  jsxName,
+  styleObjectProps,
+  ignoredLines,
+  offsetToLine,
+} from "../ast.js";
 
 // lintSource(source, filePath, ctx)
 // ctx.report(lineNum, message) called for each violation.
+//
+// Reads the style object literal from the AST, so a `{` inside a string value
+// (`style={{ content: "{" }}`) can no longer desync brace tracking (#2 / M2),
+// and only the object's own keys are inspected — a `color:` substring elsewhere
+// on the line (`title="x, color: red"`) is never a false positive (#11).
 export function lintSource(source, filePath, ctx) {
   const { report, ansi } = ctx;
-  const lines = source.split("\n");
-  let depth = 0;
+  const ast = parseSource(source, filePath);
+  const ignore = ignoredLines(ast);
 
-  for (let i = 0; i < lines.length; i++) {
-    const lineNum = i + 1;
-    const line = lines[i];
-
-    if (line.includes("color-lint-ignore")) continue;
-
-    if (depth === 0) {
-      const idx = line.search(STYLE_OPEN_RE);
-      if (idx === -1) continue;
-
-      const after = line.slice(idx + "style={".length - 1); // include the opening {
-      for (const ch of after) {
-        if (ch === "{") depth++;
-        else if (ch === "}") depth--;
+  walk(ast.program, (node) => {
+    if (node.type !== "JSXOpeningElement") return;
+    for (const attr of node.attributes) {
+      if (attr.type !== "JSXAttribute" || jsxName(attr.name) !== "style") continue;
+      for (const { keyName, node: propNode } of styleObjectProps(attr.value)) {
+        if (keyName !== "color" && keyName !== "backgroundColor") continue;
+        const line = offsetToLine(ast.lineStarts, propNode.start);
+        if (ignore.has(line)) continue;
+        report(line, `${ansi.red(keyName)} in style= — move to a ${ansi.blue("CSS module")}`);
       }
-
-      if (STYLE_COLOR_PROP_RE.test(after)) {
-        const match = after.match(STYLE_COLOR_PROP_RE);
-        report(lineNum, `${ansi.red(match[1])} in style= — move to a ${ansi.blue("CSS module")}`);
-      }
-    } else {
-      for (const ch of line) {
-        if (ch === "{") depth++;
-        else if (ch === "}") depth--;
-      }
-
-      if (STYLE_COLOR_PROP_RE.test(line)) {
-        const match = line.match(STYLE_COLOR_PROP_RE);
-        report(lineNum, `${ansi.red(match[1])} in style= — move to a ${ansi.blue("CSS module")}`);
-      }
-
-      if (depth <= 0) depth = 0;
     }
-  }
+  });
 }

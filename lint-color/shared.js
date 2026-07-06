@@ -4,6 +4,17 @@ import { readdirSync } from "node:fs";
 import { extname, join } from "node:path";
 
 import { composeColorParts } from "./classify.js";
+import {
+  parseSource,
+  walk,
+  jsxName,
+  classNameStatics,
+  ignoredLines,
+  offsetToLine,
+} from "./ast.js";
+
+// Line utilities moved to the AST layer; re-exported for existing importers.
+export { buildLineStarts, offsetToLine } from "./ast.js";
 
 // The spectral-color and color-prefix constant sets now live in the
 // classification module (classify.js), which owns the color vocabulary.
@@ -71,143 +82,30 @@ export function isStorybookFile(filePath) {
   );
 }
 
-// Extract string literal contents from a single source line.
-export function extractStringLiterals(line) {
-  const results = [];
-  const re = /"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'/g;
-  let m;
-  while ((m = re.exec(line)) !== null) {
-    results.push(m[1] !== undefined ? m[1] : m[2]);
-  }
-  return results;
-}
-
-// Run a checkToken-based rule against every string literal token in a JSX source string.
-// Composes the pre-split parts once per token, mirroring the pipeline, and hands
-// them to the rule. Returns the violation messages (strings) for all tokens that fire.
+// Run a checkToken-based rule against every className/class token in a TSX
+// source string. Parses once, walks JSXAttribute[className|class] values, splits
+// their static text, and composes the pre-split parts per token, mirroring the
+// production pipeline. Returns the violation messages (strings) that fire.
 export function runTokenRuleOnSource(checkTokenFn, source, tokens, ansi, ruleConfig = {}) {
+  const ast = parseSource(source);
+  const ignore = ignoredLines(ast);
   const violations = [];
-  for (const line of source.split("\n")) {
-    if (line.includes("color-lint-ignore")) continue;
-    for (const str of extractStringLiterals(line)) {
-      for (const rawTok of str.split(/\s+/)) {
-        if (!rawTok) continue;
-        const parts = composeColorParts(rawTok, tokens.colorPrefixes);
-        const msg = checkTokenFn(rawTok, parts, { tokens, ansi, ruleConfig });
-        if (msg) violations.push(msg);
-      }
-    }
-  }
-  return violations;
-}
-
-export function buildLineStarts(src) {
-  const starts = [0];
-  for (let k = 0; k < src.length; k++) {
-    if (src[k] === "\n") starts.push(k + 1);
-  }
-  return starts;
-}
-
-export function offsetToLine(lineStarts, offset) {
-  let lo = 0;
-  let hi = lineStarts.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (lineStarts[mid] <= offset) lo = mid;
-    else hi = mid - 1;
-  }
-  return lo + 1;
-}
-
-// Extract JSX opening tags from TSX source without a full parser.
-// Returns [{ tagName, content, startOffset }] where content is from < to >.
-export function extractJsxOpeningTags(src) {
-  const tags = [];
-  const n = src.length;
-  let i = 0;
-  let outerStr = null;
-
-  while (i < n) {
-    const ch = src[i];
-
-    if (outerStr) {
-      if (outerStr !== "`" && ch === "\\") {
-        i += 2;
-        continue;
-      }
-      if (ch === outerStr) outerStr = null;
-      i++;
-      continue;
-    }
-
-    // Skip // line comments.
-    if (ch === "/" && src[i + 1] === "/") {
-      while (i < n && src[i] !== "\n") i++;
-      continue;
-    }
-    // Skip /* block comments */.
-    if (ch === "/" && src[i + 1] === "*") {
-      i += 2;
-      while (i < n - 1 && !(src[i] === "*" && src[i + 1] === "/")) i++;
-      i += 2;
-      continue;
-    }
-
-    // Track " and ` string literals to avoid false tag detection inside strings.
-    // Single quotes intentionally excluded: apostrophes in JSX text content
-    // (e.g. "org's") would set outerStr and swallow subsequent tags.
-    if (ch === '"' || ch === "`") {
-      outerStr = ch;
-      i++;
-      continue;
-    }
-
-    if (ch === "<" && /[a-zA-Z_]/.test(src[i + 1] ?? "")) {
-      let nameEnd = i + 1;
-      while (nameEnd < n && /[\w.]/.test(src[nameEnd])) nameEnd++;
-      const tagName = src.slice(i + 1, nameEnd);
-
-      let j = nameEnd;
-      let tagStr = null;
-      let tagBrace = 0;
-      let tagEnd = -1;
-
-      while (j < n) {
-        const c = src[j];
-        if (tagStr) {
-          if (tagStr !== "`" && c === "\\") {
-            j += 2;
-            continue;
-          }
-          if (c === tagStr) tagStr = null;
-        } else if (c === '"' || c === "'" || c === "`") {
-          tagStr = c;
-        } else if (c === "{") {
-          tagBrace++;
-        } else if (c === "}") {
-          tagBrace--;
-        } else if (tagBrace === 0 && c === ">") {
-          tagEnd = j;
-          break;
-        } else if (tagBrace === 0 && c === "<") {
-          break;
+  walk(ast.program, (node) => {
+    if (node.type !== "JSXOpeningElement") return;
+    for (const attr of node.attributes) {
+      if (attr.type !== "JSXAttribute") continue;
+      const name = jsxName(attr.name);
+      if (name !== "className" && name !== "class") continue;
+      for (const { text, node: strNode } of classNameStatics(attr.value)) {
+        if (ignore.has(offsetToLine(ast.lineStarts, strNode.start))) continue;
+        for (const rawTok of text.split(/\s+/)) {
+          if (!rawTok) continue;
+          const parts = composeColorParts(rawTok, tokens.colorPrefixes);
+          const msg = checkTokenFn(rawTok, parts, { tokens, ansi, ruleConfig });
+          if (msg) violations.push(msg);
         }
-        j++;
-      }
-
-      if (tagEnd !== -1) {
-        tags.push({
-          tagName,
-          content: src.slice(i, tagEnd + 1),
-          startOffset: i,
-        });
-        i = tagEnd + 1;
-        continue;
       }
     }
-
-    i++;
-  }
-  return tags;
+  });
+  return violations;
 }

@@ -7,9 +7,16 @@ import {
   buildDisabledRules,
   checkValueIfEnabled,
   checkTokenIfEnabled,
-  extractStringLiterals,
   lintSourceIfEnabled,
 } from "./shared.js";
+import {
+  parseSource,
+  walk,
+  jsxName,
+  classNameStatics,
+  ignoredLines,
+  offsetToLine,
+} from "./ast.js";
 import { composeColorParts } from "./classify.js";
 
 import * as ruleStyleColor from "./rules/no-style-color.js";
@@ -67,39 +74,30 @@ export function createLinter(config, tokens, ansi) {
   }
 
   return {
-    // Extracts string literals from TSX/TS source and runs the full token pipeline on each.
+    // Walks className/class attribute values and runs the full token pipeline on
+    // each static class string. Only real class lists are scanned — error
+    // messages, URLs, and comments never reach the pipeline (root-cause fix).
     // Returns { violations: { line, message, ruleId }[], ignores: number[] }
-    lintTailwindSource(source) {
+    lintTailwindSource(source, filePath) {
+      const ast = parseSource(source, filePath);
+      const ignore = ignoredLines(ast);
       const violations = [];
-      const ignores = [];
-      const lines = source.split("\n");
-      let inBlockComment = false;
 
-      for (let i = 0; i < lines.length; i++) {
-        const lineNum = i + 1;
-        let line = lines[i];
-
-        if (inBlockComment) {
-          if (line.includes("*/")) inBlockComment = false;
-          continue;
+      walk(ast.program, (node) => {
+        if (node.type !== "JSXOpeningElement") return;
+        for (const attr of node.attributes) {
+          if (attr.type !== "JSXAttribute") continue;
+          const name = jsxName(attr.name);
+          if (name !== "className" && name !== "class") continue;
+          for (const { text, node: strNode } of classNameStatics(attr.value)) {
+            const line = offsetToLine(ast.lineStarts, strNode.start);
+            if (ignore.has(line)) continue;
+            violations.push(...checkTailwindClasses(text, line));
+          }
         }
-        if (line.includes("color-lint-ignore")) {
-          ignores.push(lineNum);
-          continue;
-        }
-        if (line.includes("/*")) {
-          if (!line.includes("*/")) inBlockComment = true;
-          line = line.replace(/\/\*.*?\*\//g, "").replace(/\/\*.*$/, "");
-        }
+      });
 
-        const lineCommentIdx = line.indexOf("//");
-        if (lineCommentIdx >= 0) line = line.slice(0, lineCommentIdx);
-
-        for (const str of extractStringLiterals(line)) {
-          violations.push(...checkTailwindClasses(str, lineNum));
-        }
-      }
-
+      const ignores = [...ignore].sort((a, b) => a - b);
       return { violations, ignores };
     },
 

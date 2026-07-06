@@ -5,10 +5,13 @@ export const id = 10;
 export const name = "no-useless-hover";
 
 import {
-  buildLineStarts,
-  extractJsxOpeningTags,
+  parseSource,
+  walk,
+  jsxName,
+  classNameStatics,
+  ignoredLines,
   offsetToLine,
-} from "../shared.js";
+} from "../ast.js";
 
 // Elements and components that are inherently interactive (hover feedback is valid).
 const INTERACTIVE_TAGS = new Set([
@@ -54,12 +57,49 @@ const INTERACTIVE_TAGS = new Set([
 // Table rows: hover highlight is an intentional row-level affordance.
 const TABLE_ROW_TAGS = new Set(["TableRow", "tr"]);
 
-const INTERACTION_PROP_RE =
-  /\bon(?:Click|Press|MouseDown|KeyDown|KeyUp|KeyPress|DoubleClick|TouchStart|PointerDown)\s*[={]/;
-const INTERACTIVE_ROLE_RE =
-  /\brole\s*=\s*["'`](?:button|link|menuitem|menuitemcheckbox|menuitemradio|tab|checkbox|radio|switch|option|treeitem)["'`]/;
+// Props whose presence marks an element as interactive (value irrelevant).
+const INTERACTION_PROPS = new Set([
+  "onClick",
+  "onPress",
+  "onMouseDown",
+  "onKeyDown",
+  "onKeyUp",
+  "onKeyPress",
+  "onDoubleClick",
+  "onTouchStart",
+  "onPointerDown",
+]);
+const INTERACTIVE_ROLES = new Set([
+  "button",
+  "link",
+  "menuitem",
+  "menuitemcheckbox",
+  "menuitemradio",
+  "tab",
+  "checkbox",
+  "radio",
+  "switch",
+  "option",
+  "treeitem",
+]);
 
-function tagIsInteractive(tagName, tagContent, extraInteractiveTags) {
+// Static string value of a JSX attribute, or null when it isn't a plain string.
+// Covers role="button" and role={"button"} and role={`button`} (fixes #10).
+function attrStringValue(attr) {
+  const v = attr.value;
+  if (!v) return null; // boolean attribute (e.g. `disabled`)
+  if (v.type === "Literal" && typeof v.value === "string") return v.value;
+  if (v.type === "JSXExpressionContainer") {
+    const e = v.expression;
+    if (e.type === "Literal" && typeof e.value === "string") return e.value;
+    if (e.type === "TemplateLiteral" && e.expressions.length === 0) {
+      return e.quasis.map((q) => q.value.cooked ?? "").join("");
+    }
+  }
+  return null;
+}
+
+function elementIsInteractive(opening, tagName, extraInteractiveTags) {
   if (INTERACTIVE_TAGS.has(tagName)) return true;
   if (TABLE_ROW_TAGS.has(tagName)) return true;
   if (extraInteractiveTags.has(tagName)) return true;
@@ -68,24 +108,18 @@ function tagIsInteractive(tagName, tagContent, extraInteractiveTags) {
   if (lastSegment === "Close" || lastSegment === "Trigger") return true;
   // shadcn polymorphic component: `const Comp = asChild ? Slot.Root : "button"`.
   if (tagName === "Comp") return true;
-  if (INTERACTION_PROP_RE.test(tagContent)) return true;
-  if (INTERACTIVE_ROLE_RE.test(tagContent)) return true;
-  if (/\bhref\s*[={]/.test(tagContent)) return true;
-  if (/\btabIndex\s*[={]/.test(tagContent)) return true;
-  return false;
-}
 
-// Scan tagContent for `hover:` inside any string literal ("..." or '...').
-// Returns the offset within tagContent where hover: starts, or -1.
-function findHoverInTagStrings(tagContent) {
-  const re = /"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'/g;
-  let m;
-  while ((m = re.exec(tagContent)) !== null) {
-    const str = m[1] !== undefined ? m[1] : m[2];
-    const idx = str.indexOf("hover:");
-    if (idx !== -1) return m.index + 1 + idx; // +1 skips opening quote
+  for (const attr of opening.attributes) {
+    if (attr.type !== "JSXAttribute") continue;
+    const name = jsxName(attr.name);
+    if (INTERACTION_PROPS.has(name)) return true;
+    if (name === "href" || name === "tabIndex") return true;
+    if (name === "role") {
+      const role = attrStringValue(attr);
+      if (role && INTERACTIVE_ROLES.has(role)) return true;
+    }
   }
-  return -1;
+  return false;
 }
 
 // lintSource(source, filePath, ctx)
@@ -93,27 +127,37 @@ function findHoverInTagStrings(tagContent) {
 export function lintSource(source, filePath, ctx) {
   const { report, ansi, ruleConfig } = ctx;
   const extraInteractiveTags = new Set(ruleConfig?.interactiveElements ?? []);
-  const lineStarts = buildLineStarts(source);
+  const ast = parseSource(source, filePath);
+  const ignore = ignoredLines(ast);
 
-  for (const { tagName, content, startOffset } of extractJsxOpeningTags(source)) {
-    if (!content.includes("hover:")) continue;
+  walk(ast.program, (node) => {
+    if (node.type !== "JSXOpeningElement") return;
+    const tagName = jsxName(node.name);
 
-    const hoverOffset = findHoverInTagStrings(content);
-    if (hoverOffset === -1) continue;
-
-    const absOffset = startOffset + hoverOffset;
-    const lineNum = offsetToLine(lineStarts, absOffset);
-
-    // Respect the shared suppress comment.
-    const lineEnd = lineStarts[lineNum] ?? source.length;
-    const lineText = source.slice(lineStarts[lineNum - 1], lineEnd);
-    if (lineText.includes("color-lint-ignore")) continue;
-
-    if (!tagIsInteractive(tagName, content, extraInteractiveTags)) {
-      report(
-        lineNum,
-        `${ansi.red("hover:")} on non-interactive ${ansi.red(`<${tagName}>`)} — remove ${ansi.red("hover:")} or use an interactive element`,
-      );
+    // Locate a hover: token in any static className/class value (backtick
+    // template values now reach here too — fixes #4).
+    let hoverNode = null;
+    for (const attr of node.attributes) {
+      if (attr.type !== "JSXAttribute") continue;
+      const name = jsxName(attr.name);
+      if (name !== "className" && name !== "class") continue;
+      for (const { text, node: strNode } of classNameStatics(attr.value)) {
+        if (text.includes("hover:")) {
+          hoverNode = strNode;
+          break;
+        }
+      }
+      if (hoverNode) break;
     }
-  }
+    if (!hoverNode) return;
+
+    const line = offsetToLine(ast.lineStarts, hoverNode.start);
+    if (ignore.has(line)) return;
+    if (elementIsInteractive(node, tagName, extraInteractiveTags)) return;
+
+    report(
+      line,
+      `${ansi.red("hover:")} on non-interactive ${ansi.red(`<${tagName}>`)} — remove ${ansi.red("hover:")} or use an interactive element`,
+    );
+  });
 }

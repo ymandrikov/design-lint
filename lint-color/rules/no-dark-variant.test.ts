@@ -39,11 +39,15 @@ describe("no-dark-variant", () => {
       expect(result[0]).toContain("md:dark:text-muted");
     });
 
-    it("reports string literal argument inside cn() call", () => {
+    // v1 (Change C) scopes the general token pipeline to static className/class
+    // string and template values only. Class strings inside cn()/clsx() calls are
+    // a documented v1.1 fast-follow (callee allowlist), so they are not scanned
+    // here yet. no-component-color-override still descends into calls on watched
+    // components — this deferral only affects the general spectral/dark/etc. rules.
+    it("does not scan string arguments inside a cn() call (deferred to v1.1)", () => {
       const el = `<div className={cn("dark:text-muted", extra)} />`;
       const result = lint(el);
-      expect(result).toHaveLength(1);
-      expect(result[0]).toContain("dark:text-muted");
+      expect(result).toHaveLength(0);
     });
 
     it("reports all issues", () => {

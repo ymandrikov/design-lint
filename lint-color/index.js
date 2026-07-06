@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Color design-system lint — orchestrates one-rule linters over src/.
-// Run: node scripts/lint-color/index.js
+// Run: node lint-color/index.js [target-root]
+// target-root defaults to two directories up (legacy in-host layout).
 
 import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { __unstable__loadDesignSystem } from "tailwindcss";
@@ -31,7 +32,7 @@ import * as ruleUndefinedToken from "./rules/no-undefined-token.js";
 import { createLinter } from "./linter.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const ROOT = join(__dirname, "../..");
+const ROOT = process.argv[2] ? resolve(process.argv[2]) : join(__dirname, "../..");
 const SRC = join(ROOT, "src");
 const req = createRequire(import.meta.url);
 
@@ -138,7 +139,7 @@ for (const f of getAllFiles(SRC, ".css").filter((f) => !isStorybookFile(f))) {
 for (const f of getAllFiles(SRC, ".tsx", ".ts").filter((f) => !isStorybookFile(f))) {
   const source = readFileSync(f, "utf-8");
   accumulate(linter.lintStyleSource(source, f), f);
-  accumulate(linter.lintTailwindSource(source), f);
+  accumulate(linter.lintTailwindSource(source, f), f);
   accumulate(linter.lintHoverSource(source, f), f);
   accumulate(linter.lintComponentSource(source, f), f);
 }

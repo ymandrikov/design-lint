@@ -6,10 +6,14 @@ export const id = 11;
 export const name = "no-component-color-override";
 
 import {
-  buildLineStarts,
-  extractJsxOpeningTags,
+  parseSource,
+  walk,
+  jsxName,
+  classNameStaticsDeep,
+  styleObjectProps,
+  ignoredLines,
   offsetToLine,
-} from "../shared.js";
+} from "../ast.js";
 import { classifyColorPart, composeColorParts } from "../classify.js";
 import { RAW_COLOR_RE } from "./no-raw-css-color.js";
 
@@ -37,91 +41,6 @@ function isColorToken(tok, tokens) {
   return false;
 }
 
-// Returns the content between the matching braces starting at str[start] (must be '{').
-// Correctly handles nested braces and strings so `}` inside strings doesn't end the scan early.
-function scanBraceContent(str, start) {
-  let depth = 1;
-  let i = start + 1;
-  let inStr = null;
-  while (i < str.length && depth > 0) {
-    const ch = str[i];
-    if (inStr) {
-      if (inStr !== "`" && ch === "\\") { i += 2; continue; }
-      if (ch === inStr) inStr = null;
-    } else if (ch === '"' || ch === "'" || ch === "`") {
-      inStr = ch;
-    } else if (ch === "{") {
-      depth++;
-    } else if (ch === "}") {
-      depth--;
-    }
-    i++;
-  }
-  return str.slice(start + 1, i - 1);
-}
-
-// Extract static className string values from a JSX opening-tag content string.
-// Handles: className="..." className='...'
-//          className={"..."} className={'...'}
-//          className={fn("...", ...)} — string literal arguments are extracted individually.
-// Skips template literals with expressions — too dynamic to analyze.
-function extractClassNameEntries(tagContent) {
-  const entries = [];
-  const attrRe = /\bclassName\s*=\s*/g;
-  let m;
-  while ((m = attrRe.exec(tagContent)) !== null) {
-    const pos = m.index + m[0].length;
-    const ch = tagContent[pos];
-
-    if (ch === '"' || ch === "'") {
-      // Plain string: className="..." or className='...'
-      const sm = /["']((?:[^"'\\]|\\.)*?)["']/.exec(tagContent.slice(pos));
-      if (sm) entries.push({ classStr: sm[1], offset: m.index });
-    } else if (ch === "{") {
-      const expr = scanBraceContent(tagContent, pos);
-
-      if (expr.startsWith("`")) {
-        // Template literal: join the static segments between ${...} expressions.
-        // e.g. `bg-${color}` → static parts ["bg-", ""] → classStr "bg-"
-        // isColorToken treats an empty color-part (prefix + "-" only) as a match.
-        const inner = expr.slice(1, expr.lastIndexOf("`"));
-        const classStr = inner.split(/\$\{[^}]*\}/).join("").trim();
-        if (classStr) entries.push({ classStr, offset: m.index });
-      } else {
-        // Function call or bare expression: extract every string literal argument.
-        // This covers className={"..."}, className={fn("...", ...)}, etc.
-        const strRe = /["']((?:[^"'\\]|\\.)*?)["']/g;
-        let sm;
-        while ((sm = strRe.exec(expr)) !== null) {
-          entries.push({ classStr: sm[1], offset: m.index });
-        }
-      }
-    }
-  }
-  return entries;
-}
-
-// Extract raw color string values from a style={...} attribute in a JSX opening tag.
-// Returns [{ colorValue, offset }] for each string value matching RAW_COLOR_RE.
-function extractStyleColorValues(tagContent) {
-  const entries = [];
-  const attrRe = /\bstyle\s*=\s*\{/g;
-  let m;
-  while ((m = attrRe.exec(tagContent)) !== null) {
-    const bracePos = m.index + m[0].length - 1;
-    const expr = scanBraceContent(tagContent, bracePos);
-    const strRe = /["']((?:[^"'\\]|\\.)*?)["']/g;
-    let sm;
-    while ((sm = strRe.exec(expr)) !== null) {
-      const val = sm[1];
-      if (RAW_COLOR_RE.test(val)) {
-        entries.push({ colorValue: val, offset: m.index });
-      }
-    }
-  }
-  return entries;
-}
-
 // lintSource(source, filePath, ctx)
 // ctx.report(lineNum, message) called for each violation.
 // ctx.tokens.uiComponents: Set<string> of component names from colors.json.
@@ -130,39 +49,45 @@ export function lintSource(source, filePath, ctx) {
   const { uiComponents } = tokens;
   if (!uiComponents || uiComponents.size === 0) return;
 
-  const lineStarts = buildLineStarts(source);
+  const ast = parseSource(source, filePath);
+  const ignore = ignoredLines(ast);
 
-  for (const { tagName, content, startOffset } of extractJsxOpeningTags(source)) {
-    if (!uiComponents.has(tagName)) continue;
+  walk(ast.program, (node) => {
+    if (node.type !== "JSXOpeningElement") return;
+    const tagName = jsxName(node.name);
+    if (!uiComponents.has(tagName)) return;
 
-    for (const { classStr, offset } of extractClassNameEntries(content)) {
-      const lineNum = offsetToLine(lineStarts, startOffset + offset);
-      const lineEnd = lineStarts[lineNum] ?? source.length;
-      const lineText = source.slice(lineStarts[lineNum - 1], lineEnd);
-      if (lineText.includes("color-lint-ignore")) continue;
+    for (const attr of node.attributes) {
+      if (attr.type !== "JSXAttribute") continue;
+      const name = jsxName(attr.name);
 
-      for (const tok of classStr.split(/\s+/)) {
-        if (!tok) continue;
-        if (isColorToken(tok, tokens)) {
+      if (name === "className" || name === "class") {
+        // Deep view: string args inside cn()/clsx() count too.
+        for (const { text, node: strNode } of classNameStaticsDeep(attr.value)) {
+          const line = offsetToLine(ast.lineStarts, strNode.start);
+          if (ignore.has(line)) continue;
+          for (const tok of text.split(/\s+/)) {
+            if (tok && isColorToken(tok, tokens)) {
+              report(
+                line,
+                `${ansi.red(tok)} overrides color on ${ansi.red(`<${tagName}>`)} — add a ${ansi.blue("variant")} instead`,
+              );
+            }
+          }
+        }
+      } else if (name === "style") {
+        for (const { valueNode, node: propNode } of styleObjectProps(attr.value)) {
+          if (!valueNode || valueNode.type !== "Literal" || typeof valueNode.value !== "string") continue;
+          const match = valueNode.value.match(RAW_COLOR_RE);
+          if (!match) continue;
+          const line = offsetToLine(ast.lineStarts, propNode.start);
+          if (ignore.has(line)) continue;
           report(
-            lineNum,
-            `${ansi.red(tok)} overrides color on ${ansi.red(`<${tagName}>`)} — add a ${ansi.blue("variant")} instead`,
+            line,
+            `${ansi.red(match[0])} in style= overrides color on ${ansi.red(`<${tagName}>`)} — add a ${ansi.blue("variant")} instead`,
           );
         }
       }
     }
-
-    for (const { colorValue, offset } of extractStyleColorValues(content)) {
-      const lineNum = offsetToLine(lineStarts, startOffset + offset);
-      const lineEnd = lineStarts[lineNum] ?? source.length;
-      const lineText = source.slice(lineStarts[lineNum - 1], lineEnd);
-      if (lineText.includes("color-lint-ignore")) continue;
-
-      const match = colorValue.match(RAW_COLOR_RE);
-      report(
-        lineNum,
-        `${ansi.red(match[0])} in style= overrides color on ${ansi.red(`<${tagName}>`)} — add a ${ansi.blue("variant")} instead`,
-      );
-    }
-  }
+  });
 }

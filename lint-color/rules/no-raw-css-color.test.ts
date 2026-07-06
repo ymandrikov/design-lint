@@ -95,11 +95,14 @@ describe("no-raw-css-color", () => {
       expect(result[0]).toContain("hwb(");
     });
 
-    it("reports raw hex in style attribute", () => {
+    // v1 (Change C): the general token pipeline scans className/class only, never
+    // style values. A raw color in a style prop is caught by no-style-color (the
+    // `backgroundColor` key) and, on watched components, by
+    // no-component-color-override (the value) — not by this rule's token path.
+    it("does not scan style attribute values via the token pipeline", () => {
       const el = `<div style={{ backgroundColor: "#f00" }} />`;
       const result = lint(el);
-      expect(result).toHaveLength(1);
-      expect(result[0]).toContain("#f00");
+      expect(result).toHaveLength(0);
     });
   });
 
