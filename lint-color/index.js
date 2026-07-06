@@ -21,6 +21,7 @@ import {
 
 import * as ruleStyleColor from "./rules/no-style-color.js";
 import * as ruleRawCssColor from "./rules/no-raw-css-color.js";
+import * as ruleVarColor from "./rules/no-var-color.js";
 import * as ruleAlphaModifier from "./rules/no-opacity-modifier.js";
 import * as ruleSpectralColor from "./rules/no-spectral-color.js";
 import * as ruleColorRules from "./rules/token-constraints.js";
@@ -165,8 +166,8 @@ if (violations.length === 0) {
 // Build rule label from colors.json description — that's the designer-facing source of truth.
 const ruleLabel = Object.fromEntries(
   [
-    ruleStyleColor, ruleRawCssColor, ruleAlphaModifier, ruleSpectralColor,
-    ruleColorRules, ruleDarkModifier, ruleHoverInteractive,
+    ruleStyleColor, ruleRawCssColor, ruleVarColor, ruleAlphaModifier,
+    ruleSpectralColor, ruleColorRules, ruleDarkModifier, ruleHoverInteractive,
     ruleUiColorOverride, ruleUndefinedToken,
   ].map((r) => [r.id, config.rules[r.name]?.description ?? `Rule ${r.id}`]),
 );

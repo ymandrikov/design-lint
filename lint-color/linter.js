@@ -21,6 +21,7 @@ import { composeColorParts } from "./classify.js";
 
 import * as ruleStyleColor from "./rules/no-style-color.js";
 import * as ruleRawCssColor from "./rules/no-raw-css-color.js";
+import * as ruleVarColor from "./rules/no-var-color.js";
 import * as ruleAlphaModifier from "./rules/no-opacity-modifier.js";
 import * as ruleSpectralColor from "./rules/no-spectral-color.js";
 import * as ruleColorRules from "./rules/token-constraints.js";
@@ -45,6 +46,9 @@ export function createLinter(config, tokens, ansi) {
 
     const rawColorMsg = checkTokenIfEnabled(disabledRules, ruleRawCssColor, rawTok, parts, tokens, ansi, config[ruleRawCssColor.name]);
     if (rawColorMsg) found.push({ message: rawColorMsg, ruleId: ruleRawCssColor.id });
+
+    const varColorMsg = checkTokenIfEnabled(disabledRules, ruleVarColor, rawTok, parts, tokens, ansi, config[ruleVarColor.name]);
+    if (varColorMsg) found.push({ message: varColorMsg, ruleId: ruleVarColor.id });
 
     // No base (e.g. "/50" or a lone "!") — nothing for the color-part rules to see.
     if (!parts.base) return found;
