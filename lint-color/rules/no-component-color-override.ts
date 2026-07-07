@@ -2,9 +2,6 @@
 // Components discovered in `componentsDirectory` expose variant props for styling.
 // Passing color classes via className bypasses the variant system — add a variant instead.
 
-export const id = 11;
-export const name = "no-component-color-override";
-
 import {
   parseSource,
   walk,
@@ -14,8 +11,27 @@ import {
   ignoredLines,
   offsetToLine,
 } from "../ast.ts";
-import { classifyColorPart, composeColorParts } from "../classify.ts";
-import { findRawColor } from "./no-raw-css-color.js";
+import { classifyColorPart, composeColorParts, type Tokens } from "../classify.ts";
+import { findRawColor } from "./no-raw-css-color.ts";
+
+export const id = 11;
+export const name = "no-component-color-override";
+
+interface Ansi {
+  red(s: string): string;
+  blue(s: string): string;
+}
+
+interface OverrideTokens extends Tokens {
+  colorPrefixes?: string[];
+  uiComponents?: Set<string>;
+}
+
+interface Ctx {
+  report: (line: number, message: string) => void;
+  tokens: OverrideTokens;
+  ansi: Ansi;
+}
 
 // Returns true when tok applies a known semantic or spectral color via any color prefix.
 // text-sm / text-center / shadow-md → false (not a color token).
@@ -26,7 +42,7 @@ import { findRawColor } from "./no-raw-css-color.js";
 // evidence a color is being applied, so an empty color part ("bg-" from
 // `bg-${color}`) or a spectral-prefixed trailing dash ("bg-red-" from
 // `bg-red-${shade}`) still counts.
-function isColorToken(tok, tokens) {
+function isColorToken(tok: string, tokens: OverrideTokens): boolean {
   const parts = composeColorParts(tok, tokens.colorPrefixes);
   if (parts === null) return false; // not a Candidate — Tailwind discards it
   const { colorPrefix, colorPart } = parts;
@@ -46,7 +62,7 @@ function isColorToken(tok, tokens) {
 // lintSource(source, filePath, ctx)
 // ctx.report(lineNum, message) called for each violation.
 // ctx.tokens.uiComponents: Set<string> of component names from colors.json.
-export function lintSource(source, filePath, ctx) {
+export function lintSource(source: string, filePath: string, ctx: Ctx): void {
   const { report, tokens, ansi } = ctx;
   const { uiComponents } = tokens;
   if (!uiComponents || uiComponents.size === 0) return;

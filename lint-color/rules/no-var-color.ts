@@ -1,10 +1,20 @@
 // Rule 6 — No CSS-variable reference behind a color prefix.
 // Use the token's semantic utility class (bg-primary), not a var() reference.
 
-import { classifyParts } from "../classify.ts";
+import { classifyParts, type ColorParts, type Tokens } from "../classify.ts";
 
 export const id = 6;
 export const name = "no-var-color";
+
+interface Ansi {
+  red(s: string): string;
+  blue(s: string): string;
+}
+
+interface Ctx {
+  tokens: Tokens;
+  ansi: Ansi;
+}
 
 // checkToken(rawTok, parts, ctx) → message string or null.
 // Fires on the classifier's "var" verdict — a clean CSS-variable reference
@@ -14,7 +24,7 @@ export const name = "no-var-color";
 // reference carrying a literal-color fallback (bg-[var(--x,red)]) classifies
 // "raw" instead, so no-raw-css-color owns it and this rule never double-reports.
 // The message points at the utility class for the token, not a CSS variable.
-export function checkToken(rawTok, parts, ctx) {
+export function checkToken(rawTok: string, parts: ColorParts, ctx: Ctx): string | null {
   const { tokens, ansi } = ctx;
   if (classifyParts(parts, tokens) !== "var") return null;
   // A prefixed utility names its prefix ("bg-<token>"); an arbitrary-property

@@ -1,9 +1,6 @@
 // Rule 1 — No color or backgroundColor in style= props.
 // Use a CSS module with a var(--color-*) token instead.
 
-export const id = 1;
-export const name = "no-style-color";
-
 import {
   parseSource,
   walk,
@@ -13,6 +10,21 @@ import {
   offsetToLine,
 } from "../ast.ts";
 
+export const id = 1;
+export const name = "no-style-color";
+
+interface Ansi {
+  red(s: string): string;
+  blue(s: string): string;
+}
+
+type ReportFn = (line: number, message: string) => void;
+
+interface Ctx {
+  report: ReportFn;
+  ansi: Ansi;
+}
+
 // lintSource(source, filePath, ctx)
 // ctx.report(lineNum, message) called for each violation.
 //
@@ -20,7 +32,7 @@ import {
 // (`style={{ content: "{" }}`) can no longer desync brace tracking (#2 / M2),
 // and only the object's own keys are inspected — a `color:` substring elsewhere
 // on the line (`title="x, color: red"`) is never a false positive (#11).
-export function lintSource(source, filePath, ctx) {
+export function lintSource(source: string, filePath: string, ctx: Ctx): void {
   const { report, ansi } = ctx;
   const ast = parseSource(source, filePath);
   const ignore = ignoredLines(ast);

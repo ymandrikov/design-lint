@@ -3,11 +3,16 @@
 
 import valueParser from "postcss-value-parser";
 
-import { classifyParts } from "../classify.ts";
+import { classifyParts, type ColorParts, type Tokens } from "../classify.ts";
 import { isColor } from "../vendor/is-color.js";
 
 export const id = 2;
 export const name = "no-raw-css-color";
+
+interface Ansi {
+  red(s: string): string;
+  blue(s: string): string;
+}
 
 // checkToken(rawTok, parts, ctx) → message string or null.
 // Flags a literal color hiding in a Tailwind arbitrary value (bg-[#ff0000],
@@ -15,7 +20,11 @@ export const name = "no-raw-css-color";
 // candidate ([color:red], [background-color:#123], [--my-color:red]). It
 // consumes the shared classification (verdict "raw") instead of re-scanning the
 // token — one definition of "literal color" for classes and CSS declarations.
-export function checkToken(rawTok, parts, ctx) {
+export function checkToken(
+  rawTok: string,
+  parts: ColorParts,
+  ctx: { tokens: Tokens; ansi: Ansi },
+): string | null {
   const { tokens, ansi } = ctx;
   if (classifyParts(parts, tokens) !== "raw") return null;
   return `${ansi.red(rawTok)} — raw color in arbitrary value; use a ${ansi.blue("var(--color-*)")} token`;
@@ -27,8 +36,8 @@ export function checkToken(rawTok, parts, ctx) {
 // are skipped — a `#id` fragment inside url() is not a color (finding #8). Every
 // other token is checked against the shared is-color, so named colors (`red`)
 // are flagged like hex and color functions. Returns the first raw color found.
-export function findRawColor(value) {
-  let found = null;
+export function findRawColor(value: string): string | null {
+  let found: string | null = null;
   valueParser(value).walk((node) => {
     if (found) return false;
     if (node.type === "function") {
@@ -49,7 +58,7 @@ export function findRawColor(value) {
 
 // checkValue(value, ctx) → message string or null.
 // The caller owns the declaration node, ignore detection, and line numbers.
-export function checkValue(value, ctx) {
+export function checkValue(value: string, ctx: { ansi: Ansi }): string | null {
   const { ansi } = ctx;
   const found = findRawColor(value);
   if (found) {

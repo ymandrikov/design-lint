@@ -6,11 +6,27 @@
 // hover: handling is folded in here: when rawTok has "hover:", the color part
 // must additionally satisfy allowed["hover:"] (if that key is present).
 
+import type { ColorParts, Tokens } from "../classify.ts";
+
 export const id = 5;
 export const name = "token-constraints";
 
+interface Ansi {
+  red(s: string): string;
+  blue(s: string): string;
+}
+
+// Prefix → allowed/denied pattern lists (see the pattern syntax below).
+type PatternMap = Record<string, string[]>;
+
+interface Ctx {
+  tokens: Tokens;
+  ansi: Ansi;
+  ruleConfig?: { allowed?: PatternMap; denied?: PatternMap };
+}
+
 // Pattern syntax: "*X*" → contains, "*suffix" → endsWith, "prefix*" → startsWith, "exact" → exact.
-function matchPattern(value, pattern) {
+function matchPattern(value: string, pattern: string): boolean {
   if (pattern.startsWith("*") && pattern.endsWith("*")) return value.includes(pattern.slice(1, -1));
   if (pattern.startsWith("*")) return value.endsWith(pattern.slice(1));
   if (pattern.endsWith("*")) return value.startsWith(pattern.slice(0, -1));
@@ -18,13 +34,15 @@ function matchPattern(value, pattern) {
 }
 
 // checkToken(rawTok, parts, ctx) → message string or null.
-export function checkToken(rawTok, parts, ctx) {
+export function checkToken(rawTok: string, parts: ColorParts, ctx: Ctx): string | null {
   const { tokens, ansi, ruleConfig } = ctx;
   const { semanticSet } = tokens;
   const { base, colorPrefix, colorPart, variants } = parts;
 
   if (!colorPrefix) return null;
-  if (!semanticSet.has(colorPart)) return null;
+  // colorPrefix set ⇒ colorPart is a string; the null branch only guards the type.
+  if (colorPart === null) return null;
+  if (!semanticSet?.has(colorPart)) return null;
 
   const { allowed = {}, denied = {} } = ruleConfig ?? {};
 

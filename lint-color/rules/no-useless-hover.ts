@@ -1,9 +1,6 @@
 // Rule 10 — hover: on non-interactive elements.
 // hover: feedback is only meaningful on elements the user can interact with.
 
-export const id = 10;
-export const name = "no-useless-hover";
-
 import {
   parseSource,
   walk,
@@ -12,9 +9,26 @@ import {
   ignoredLines,
   offsetToLine,
 } from "../ast.ts";
+import type { JSXAttribute, JSXOpeningElement, Node } from "oxc-parser";
+
+export const id = 10;
+export const name = "no-useless-hover";
+
+interface Ansi {
+  red(s: string): string;
+  blue(s: string): string;
+}
+
+type ReportFn = (line: number, message: string) => void;
+
+interface Ctx {
+  report: ReportFn;
+  ansi: Ansi;
+  ruleConfig?: { interactiveElements?: string[] };
+}
 
 // Elements and components that are inherently interactive (hover feedback is valid).
-const INTERACTIVE_TAGS = new Set([
+const INTERACTIVE_TAGS = new Set<string>([
   // HTML
   "a",
   "button",
@@ -55,10 +69,10 @@ const INTERACTIVE_TAGS = new Set([
 ]);
 
 // Table rows: hover highlight is an intentional row-level affordance.
-const TABLE_ROW_TAGS = new Set(["TableRow", "tr"]);
+const TABLE_ROW_TAGS = new Set<string>(["TableRow", "tr"]);
 
 // Props whose presence marks an element as interactive (value irrelevant).
-const INTERACTION_PROPS = new Set([
+const INTERACTION_PROPS = new Set<string>([
   "onClick",
   "onPress",
   "onMouseDown",
@@ -69,7 +83,7 @@ const INTERACTION_PROPS = new Set([
   "onTouchStart",
   "onPointerDown",
 ]);
-const INTERACTIVE_ROLES = new Set([
+const INTERACTIVE_ROLES = new Set<string>([
   "button",
   "link",
   "menuitem",
@@ -85,7 +99,7 @@ const INTERACTIVE_ROLES = new Set([
 
 // Static string value of a JSX attribute, or null when it isn't a plain string.
 // Covers role="button" and role={"button"} and role={`button`} (fixes #10).
-function attrStringValue(attr) {
+function attrStringValue(attr: JSXAttribute): string | null {
   const v = attr.value;
   if (!v) return null; // boolean attribute (e.g. `disabled`)
   if (v.type === "Literal" && typeof v.value === "string") return v.value;
@@ -99,7 +113,11 @@ function attrStringValue(attr) {
   return null;
 }
 
-function elementIsInteractive(opening, tagName, extraInteractiveTags) {
+function elementIsInteractive(
+  opening: JSXOpeningElement,
+  tagName: string,
+  extraInteractiveTags: Set<string>,
+): boolean {
   if (INTERACTIVE_TAGS.has(tagName)) return true;
   if (TABLE_ROW_TAGS.has(tagName)) return true;
   if (extraInteractiveTags.has(tagName)) return true;
@@ -124,9 +142,9 @@ function elementIsInteractive(opening, tagName, extraInteractiveTags) {
 
 // lintSource(source, filePath, ctx)
 // ctx.report(lineNum, message) called for each violation.
-export function lintSource(source, filePath, ctx) {
+export function lintSource(source: string, filePath: string, ctx: Ctx): void {
   const { report, ansi, ruleConfig } = ctx;
-  const extraInteractiveTags = new Set(ruleConfig?.interactiveElements ?? []);
+  const extraInteractiveTags = new Set<string>(ruleConfig?.interactiveElements ?? []);
   const ast = parseSource(source, filePath);
   const ignore = ignoredLines(ast);
 
@@ -136,7 +154,7 @@ export function lintSource(source, filePath, ctx) {
 
     // Locate a hover: token in any static className/class value (backtick
     // template values now reach here too — fixes #4).
-    let hoverNode = null;
+    let hoverNode: Node | null = null;
     for (const attr of node.attributes) {
       if (attr.type !== "JSXAttribute") continue;
       const name = jsxName(attr.name);

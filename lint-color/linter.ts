@@ -13,16 +13,16 @@ import {
 } from "./ast.ts";
 import { composeColorParts, type ColorParts } from "./classify.ts";
 
-import * as ruleStyleColor from "./rules/no-style-color.js";
-import * as ruleRawCssColor from "./rules/no-raw-css-color.js";
-import * as ruleVarColor from "./rules/no-var-color.js";
-import * as ruleAlphaModifier from "./rules/no-opacity-modifier.js";
+import * as ruleStyleColor from "./rules/no-style-color.ts";
+import * as ruleRawCssColor from "./rules/no-raw-css-color.ts";
+import * as ruleVarColor from "./rules/no-var-color.ts";
+import * as ruleAlphaModifier from "./rules/no-opacity-modifier.ts";
 import * as ruleSpectralColor from "./rules/no-spectral-color.ts";
-import * as ruleColorRules from "./rules/token-constraints.js";
-import * as ruleDarkModifier from "./rules/no-dark-variant.js";
-import * as ruleHoverInteractive from "./rules/no-useless-hover.js";
-import * as ruleUiColorOverride from "./rules/no-component-color-override.js";
-import * as ruleUndefinedToken from "./rules/no-undefined-token.js";
+import * as ruleColorRules from "./rules/token-constraints.ts";
+import * as ruleDarkModifier from "./rules/no-dark-variant.ts";
+import * as ruleHoverInteractive from "./rules/no-useless-hover.ts";
+import * as ruleUiColorOverride from "./rules/no-component-color-override.ts";
+import * as ruleUndefinedToken from "./rules/no-undefined-token.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

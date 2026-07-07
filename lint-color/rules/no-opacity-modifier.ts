@@ -1,10 +1,20 @@
 // Rule 3 — No opacity modifiers on color classes (e.g. bg-destructive/5).
 // Use a dedicated token with the opacity baked in instead.
 
-import { classifyColorPart } from "../classify.ts";
+import { classifyColorPart, type ColorParts, type Tokens } from "../classify.ts";
 
 export const id = 3;
 export const name = "no-opacity-modifier";
+
+interface Ansi {
+  red(s: string): string;
+  blue(s: string): string;
+}
+
+interface Ctx {
+  tokens: Tokens;
+  ansi: Ansi;
+}
 
 // checkToken(rawTok, parts, ctx) → message string or null.
 //
@@ -13,7 +23,7 @@ export const name = "no-opacity-modifier";
 // is non-null). The real-color gate kills the line-height false positive
 // (text-sm/6, text-lg/[1.4]) while the broadened Modifier detection closes the
 // arbitrary/var opacity bypass (finding #3).
-export function checkToken(rawTok, parts, ctx) {
+export function checkToken(_rawTok: string, parts: ColorParts, ctx: Ctx): string | null {
   const { tokens, ansi } = ctx;
   const { base, modifier, colorPrefix, colorPart } = parts;
   // null → no "/"; "" → a trailing-slash typo ("bg-primary/"), not a Modifier.
