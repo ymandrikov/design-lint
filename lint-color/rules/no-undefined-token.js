@@ -1,6 +1,6 @@
 // Rule 12 — Color class does not resolve to any CSS in this project.
 // Requires tokens.isValidTailwindCandidate (loaded from the Tailwind design system
-// in index.js). No-op when the function is absent so rule-specific tests that
+// in index.ts). No-op when the function is absent so rule-specific tests that
 // don't provide the Tailwind API are not affected.
 
 export const id = 12;

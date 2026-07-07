@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Color design-system lint — orchestrates one-rule linters over src/.
-// Run: node lint-color/index.js [target-root]
+// Run: node lint-color/index.ts [target-root]
 // target-root defaults to two directories up (legacy in-host layout).
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -29,16 +29,57 @@ import * as ruleUndefinedToken from "./rules/no-undefined-token.js";
 
 import { createLinter } from "./linter.ts";
 
+// ── Types ───────────────────────────────────────────────────────────────────
+
+// Shape of design-system/lint/colors.json at the JSON.parse boundary (the one
+// external-data seam). Every rule sub-config is open-ended; only the fields this
+// entrypoint reads are named. `componentsDirectory` rides under the component
+// rule; `description` is the designer-facing label surfaced in the report.
+type RuleConfig = {
+  enabled?: boolean;
+  description?: string;
+  componentsDirectory?: string;
+  [key: string]: unknown;
+};
+type Config = {
+  colorTokenFiles: string[];
+  rules: Record<string, RuleConfig>;
+};
+
+// What each rule namespace exposes to the report-label builder. The nine `.js`
+// rules resolve permissively under checkJs:false; this view pins the two members
+// read here without pulling the rules/ layer into scope.
+type RuleModule = { id: number; name: string };
+
+// The result shape every linter.lint*Source method returns (mirrors linter.ts).
+type LintResult = {
+  violations: { line: number; message: string; ruleId: number }[];
+  ignores: number[];
+};
+
+type OutViolation = { file: string; line: number; rule: number; message: string };
+type OutIgnore = { file: string; line: number };
+
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const ROOT = process.argv[2] ? resolve(process.argv[2]) : join(__dirname, "../..");
 const SRC = join(ROOT, "src");
 const req = createRequire(import.meta.url);
 
-async function buildIsValidTailwindCandidate(cssEntryFile) {
+// Options accepted by the Tailwind loader; its resolver callbacks type their
+// returns with a `path` field (and `module: Plugin | Config`) this linter's
+// loaders never supplied — those fields were dead at runtime for the single
+// candidatesToCss call, verified by the unchanged demo run. Cast the callbacks
+// to the package's expected type at this third-party (__unstable__) seam rather
+// than emit a `path` that could alter candidate resolution.
+type LoadOpts = NonNullable<Parameters<typeof __unstable__loadDesignSystem>[1]>;
+
+async function buildIsValidTailwindCandidate(
+  cssEntryFile: string,
+): Promise<(tok: string) => boolean> {
   const entryCSS = readFileSync(join(ROOT, cssEntryFile), "utf-8");
   const ds = await __unstable__loadDesignSystem(entryCSS, {
     base: ROOT,
-    loadStylesheet: async (id, base) => {
+    loadStylesheet: (async (id: string, base: string) => {
       try {
         const local = join(base, id);
         return { content: readFileSync(local, "utf-8"), base: dirname(local) };
@@ -50,10 +91,10 @@ async function buildIsValidTailwindCandidate(cssEntryFile) {
         return { content: readFileSync(css, "utf-8"), base: dirname(css) };
       } catch {}
       return { content: "", base };
-    },
-    loadModule: async (id, base) => {
+    }) as LoadOpts["loadStylesheet"],
+    loadModule: (async (id: string, base: string) => {
       try {
-        let resolved;
+        let resolved: string;
         try { resolved = req.resolve(id, { paths: [base, ROOT] }); }
         catch { resolved = join(base, id); }
         const mod = await import(pathToFileURL(resolved).href);
@@ -61,16 +102,16 @@ async function buildIsValidTailwindCandidate(cssEntryFile) {
       } catch {
         return { module: {}, base };
       }
-    },
+    }) as unknown as LoadOpts["loadModule"],
   });
-  return (tok) => ds.candidatesToCss([tok]).some((r) => r !== null && r !== "");
+  return (tok: string) => ds.candidatesToCss([tok]).some((r) => r !== null && r !== "");
 }
 
-const ansi = { red, blue: (s) => (process.stdout.isTTY ? `\x1b[34m${s}\x1b[0m` : s), dim };
+const ansi = { red, blue: (s: string) => (process.stdout.isTTY ? `\x1b[34m${s}\x1b[0m` : s), dim };
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const config = JSON.parse(
+const config: Config = JSON.parse(
   readFileSync(join(ROOT, "design-system/lint/colors.json"), "utf-8"),
 );
 const EXEMPT_CSS = new Set(config.colorTokenFiles.map((f) => join(ROOT, f)));
@@ -81,13 +122,13 @@ const derivedSemanticTokens = config.colorTokenFiles.flatMap((f) => [
   ...readFileSync(join(ROOT, f), "utf-8").matchAll(/--color-([\w-]+)\s*:/g),
 ].map((m) => m[1]));
 
-const componentOverrideConfig = config.rules["no-component-color-override"] ?? {};
+const componentOverrideConfig: RuleConfig = config.rules["no-component-color-override"] ?? {};
 
-function kebabToPascal(s) {
+function kebabToPascal(s: string): string {
   return s.split("-").map((w) => w[0].toUpperCase() + w.slice(1)).join("");
 }
 
-function loadUiComponents() {
+function loadUiComponents(): Set<string> {
   const dir = componentOverrideConfig.componentsDirectory;
   if (!dir) return new Set();
   try {
@@ -115,10 +156,10 @@ const linter = createLinter(config.rules ?? {}, tokens, ansi);
 
 // ── Violations & ignores ──────────────────────────────────────────────────────
 
-const violations = [];
-const ignores = [];
+const violations: OutViolation[] = [];
+const ignores: OutIgnore[] = [];
 
-function accumulate({ violations: vs, ignores: is }, filePath) {
+function accumulate({ violations: vs, ignores: is }: LintResult, filePath: string): void {
   for (const { line, message, ruleId } of vs) {
     violations.push({ file: relative(ROOT, filePath), line, rule: ruleId, message });
   }
@@ -161,12 +202,13 @@ if (violations.length === 0) {
 }
 
 // Build rule label from colors.json description — that's the designer-facing source of truth.
-const ruleLabel = Object.fromEntries(
-  [
-    ruleStyleColor, ruleRawCssColor, ruleVarColor, ruleAlphaModifier,
-    ruleSpectralColor, ruleColorRules, ruleDarkModifier, ruleHoverInteractive,
-    ruleUiColorOverride, ruleUndefinedToken,
-  ].map((r) => [r.id, config.rules[r.name]?.description ?? `Rule ${r.id}`]),
+const ruleModules: RuleModule[] = [
+  ruleStyleColor, ruleRawCssColor, ruleVarColor, ruleAlphaModifier,
+  ruleSpectralColor, ruleColorRules, ruleDarkModifier, ruleHoverInteractive,
+  ruleUiColorOverride, ruleUndefinedToken,
+];
+const ruleLabel: Record<number, string> = Object.fromEntries(
+  ruleModules.map((r) => [r.id, config.rules[r.name]?.description ?? `Rule ${r.id}`]),
 );
 
 const byRule = Map.groupBy(violations, (v) => v.rule);

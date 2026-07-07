@@ -12,7 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "lint:demo": "node lint-color/index.js fixtures/demo-app"
+    "lint:demo": "node lint-color/index.ts fixtures/demo-app"
   },
   "dependencies": {
     "@types/node": "^26.1.0",

@@ -56,7 +56,7 @@ export function offsetToLine(lineStarts: number[], offset: number): number {
 }
 
 // ── Parse (with LRU(1) cache) ───────────────────────────────────────────────
-// index.js runs four rule passes over the same source; caching the last parse
+// index.ts runs four rule passes over the same source; caching the last parse
 // makes that one parse per file (review §3 HOT item — deletes double tokenize).
 
 let cache: { source: string; lang: Lang; ast: ParsedAst } | null = null;

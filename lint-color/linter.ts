@@ -1,5 +1,5 @@
 // Core linting logic — operates on in-memory source strings.
-// index.js is the file-reading entry point; tests import createLinter directly.
+// index.ts is the file-reading entry point; tests import createLinter directly.
 
 import postcss, { type Root } from "postcss";
 
@@ -29,7 +29,7 @@ import * as ruleUndefinedToken from "./rules/no-undefined-token.js";
 type Ansi = { red: (s: string) => string; blue: (s: string) => string };
 type ReportFn = (line: number, message: string) => void;
 
-// The resolved token set the CLI (index.js) and the tests (minimalTokens) build.
+// The resolved token set the CLI (index.ts) and the tests (minimalTokens) build.
 // Every field is optional so both shapes — and the `{}` passed for source-only
 // rules — satisfy it. Only `colorPrefixes` is read here; the rest are threaded
 // to rules via ctx.tokens.

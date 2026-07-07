@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 const ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 
 function runCli(target: string) {
-  return spawnSync("node", [join(ROOT, "lint-color/index.js"), target], {
+  return spawnSync("node", [join(ROOT, "lint-color/index.ts"), target], {
     cwd: ROOT,
     encoding: "utf-8",
   });
