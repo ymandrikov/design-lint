@@ -9,7 +9,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { __unstable__loadDesignSystem } from "tailwindcss";
 
-import { bold, dim, red } from "./ansi.js";
+import { bold, dim, red } from "./ansi.ts";
 import { getAllFiles, isStorybookFile } from "./files.js";
 import {
   TAILWIND_COLOR_PREFIXES,
