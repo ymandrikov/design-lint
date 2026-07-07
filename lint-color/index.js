@@ -10,7 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { __unstable__loadDesignSystem } from "tailwindcss";
 
 import { bold, dim, red } from "./ansi.ts";
-import { getAllFiles, isStorybookFile } from "./files.js";
+import { getAllFiles, isStorybookFile } from "./files.ts";
 import {
   TAILWIND_COLOR_PREFIXES,
   TAILWIND_SPECTRAL_COLORS,
