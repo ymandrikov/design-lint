@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ansi } from "./helpers.js";
-import { TAILWIND_COLOR_PREFIXES, TAILWIND_SPECTRAL_COLORS } from "./shared.js";
+import { TAILWIND_COLOR_PREFIXES, TAILWIND_SPECTRAL_COLORS } from "./classify.js";
 import { createLinter } from "./linter.js";
 
 type Rules = Record<string, { enabled: boolean }>;

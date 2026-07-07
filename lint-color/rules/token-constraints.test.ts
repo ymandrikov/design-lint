@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { ansi, type CheckTokenFn } from "../helpers.js";
+import { ansi, runTokenRuleOnSource, type CheckTokenFn } from "../helpers.js";
 import {
   TAILWIND_COLOR_PREFIXES,
   TAILWIND_SPECTRAL_COLORS,
-  runTokenRuleOnSource,
-} from "../shared.js";
+} from "../classify.js";
 
 const { checkToken } = (await import("./token-constraints.js")) as {
   checkToken: CheckTokenFn;

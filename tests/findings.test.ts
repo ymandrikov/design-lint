@@ -8,7 +8,7 @@ import { ansi } from "../lint-color/helpers.js";
 import {
   TAILWIND_COLOR_PREFIXES,
   TAILWIND_SPECTRAL_COLORS,
-} from "../lint-color/shared.js";
+} from "../lint-color/classify.js";
 import { createLinter } from "../lint-color/linter.js";
 
 type Rules = Record<string, { enabled: boolean }>;

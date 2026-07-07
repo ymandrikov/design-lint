@@ -4,12 +4,6 @@
 import postcss from "postcss";
 
 import {
-  buildDisabledRules,
-  checkValueIfEnabled,
-  checkTokenIfEnabled,
-  lintSourceIfEnabled,
-} from "./shared.js";
-import {
   parseSource,
   walk,
   jsxName,
@@ -29,6 +23,42 @@ import * as ruleDarkModifier from "./rules/no-dark-variant.js";
 import * as ruleHoverInteractive from "./rules/no-useless-hover.js";
 import * as ruleUiColorOverride from "./rules/no-component-color-override.js";
 import * as ruleUndefinedToken from "./rules/no-undefined-token.js";
+
+function buildDisabledRules(rules) {
+  return new Set(
+    Object.entries(rules)
+      .filter(([, r]) => r.enabled === false)
+      .map(([name]) => name),
+  );
+}
+
+// Run a lintSource-based rule against an in-memory source string.
+// Returns [] immediately if the rule name is in disabledRules.
+function lintSourceIfEnabled(disabledRules, ruleModule, source, filePath, tokens, ansi, ruleConfig = {}) {
+  if (disabledRules.has(ruleModule.name)) return [];
+  const found = [];
+  ruleModule.lintSource(source, filePath, {
+    report: (line, message) => found.push({ line, message }),
+    tokens,
+    ansi,
+    ruleConfig,
+  });
+  return found;
+}
+
+// Run a checkToken-based rule against a single token's pre-split parts.
+// Returns null immediately if the rule name is in disabledRules.
+function checkTokenIfEnabled(disabledRules, ruleModule, rawTok, parts, tokens, ansi, ruleConfig = {}) {
+  if (disabledRules.has(ruleModule.name)) return null;
+  return ruleModule.checkToken(rawTok, parts, { tokens, ansi, ruleConfig });
+}
+
+// Run a checkValue-based rule against a single CSS declaration value.
+// Returns null immediately if the rule name is in disabledRules.
+function checkValueIfEnabled(disabledRules, ruleModule, value, ansi) {
+  if (disabledRules.has(ruleModule.name)) return null;
+  return ruleModule.checkValue(value, { ansi });
+}
 
 export function createLinter(config, tokens, ansi) {
   const disabledRules = buildDisabledRules(config);

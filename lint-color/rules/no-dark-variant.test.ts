@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ansi, type CheckTokenFn } from "../helpers.js";
-import { runTokenRuleOnSource } from "../shared.js";
+import { runTokenRuleOnSource } from "../helpers.js";
 
 const { checkToken } = (await import("./no-dark-variant.js")) as {
   checkToken: CheckTokenFn;
