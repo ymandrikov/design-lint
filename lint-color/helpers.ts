@@ -1,6 +1,8 @@
 // Shared types and test helpers for lint-color rule tests.
 // scripts/ is excluded from tsconfig, so rule modules are imported via cast.
 
+import type { composeColorParts } from "./classify.js";
+
 export type Ansi = { red: (s: string) => string; blue: (s: string) => string };
 export type ReportFn = (line: number, message: string) => void;
 
@@ -16,13 +18,9 @@ export type TokenCtx = {
   ruleConfig?: Record<string, unknown>;
 };
 
-export type ColorParts = {
-  variants: string[];
-  base: string;
-  modifier: string | null;
-  colorPrefix: string | null;
-  colorPart: string | null;
-};
+// Derived from the classifier's source of truth so it can't drift from the real
+// runtime shape the linter hands to checkToken (includes the arbitrary-property fields).
+export type ColorParts = NonNullable<ReturnType<typeof composeColorParts>>;
 
 export type LintSourceFn = (source: string, filePath: string, ctx: LintCtx) => void;
 export type CheckValueFn = (value: string, ctx: { ansi: Ansi }) => string | null;

@@ -23,7 +23,7 @@ import * as ruleStyleColor from "./rules/no-style-color.js";
 import * as ruleRawCssColor from "./rules/no-raw-css-color.js";
 import * as ruleVarColor from "./rules/no-var-color.js";
 import * as ruleAlphaModifier from "./rules/no-opacity-modifier.js";
-import * as ruleSpectralColor from "./rules/no-spectral-color.js";
+import * as ruleSpectralColor from "./rules/no-spectral-color.ts";
 import * as ruleColorRules from "./rules/token-constraints.js";
 import * as ruleDarkModifier from "./rules/no-dark-variant.js";
 import * as ruleHoverInteractive from "./rules/no-useless-hover.js";
