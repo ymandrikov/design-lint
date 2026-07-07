@@ -1,0 +1,4 @@
+interface:
+  display_name: "Clean Code Comments"
+  short_description: "Prevent and clean useless code comments"
+  default_prompt: "Use $clean-code-comments to clean up comments in this code."
