@@ -1,7 +1,7 @@
 // Core linting logic — operates on in-memory source strings.
 // index.js is the file-reading entry point; tests import createLinter directly.
 
-import postcss from "postcss";
+import postcss, { type Root } from "postcss";
 
 import {
   parseSource,
@@ -11,7 +11,7 @@ import {
   ignoredLines,
   offsetToLine,
 } from "./ast.ts";
-import { composeColorParts } from "./classify.ts";
+import { composeColorParts, type ColorParts } from "./classify.ts";
 
 import * as ruleStyleColor from "./rules/no-style-color.js";
 import * as ruleRawCssColor from "./rules/no-raw-css-color.js";
@@ -24,7 +24,58 @@ import * as ruleHoverInteractive from "./rules/no-useless-hover.js";
 import * as ruleUiColorOverride from "./rules/no-component-color-override.js";
 import * as ruleUndefinedToken from "./rules/no-undefined-token.js";
 
-function buildDisabledRules(rules) {
+// ── Types ───────────────────────────────────────────────────────────────────
+
+type Ansi = { red: (s: string) => string; blue: (s: string) => string };
+type ReportFn = (line: number, message: string) => void;
+
+// The resolved token set the CLI (index.js) and the tests (minimalTokens) build.
+// Every field is optional so both shapes — and the `{}` passed for source-only
+// rules — satisfy it. Only `colorPrefixes` is read here; the rest are threaded
+// to rules via ctx.tokens.
+type Tokens = {
+  semanticSet?: Set<string>;
+  spectralSet?: Set<string>;
+  colorPrefixes?: string[];
+  uiComponents?: Set<string>;
+  isValidTailwindCandidate?: ((tok: string) => boolean) | null;
+};
+
+type RuleConfig = { enabled?: boolean; [key: string]: unknown };
+type LinterConfig = Record<string, RuleConfig>;
+
+// Ctx shapes the dispatch PROMISES each rule. `ruleConfig` is intentionally left
+// out of these promised types: nine rules are untyped `.js` and the one typed
+// rule (`no-spectral-color.ts`) declares its own private `ruleConfig` shape, so
+// pinning a single `ruleConfig` type here would clash with it contravariantly.
+// `ruleConfig` IS still passed at runtime (see the helpers) — the rules that read
+// it receive it; only the compile-time contract omits it.
+type LintSourceCtx = { report: ReportFn; tokens: Tokens; ansi: Ansi };
+type CheckTokenCtx = { tokens: Tokens; ansi: Ansi };
+type ValueCtx = { ansi: Ansi };
+
+// Rule-module dispatch shapes — the members of each `import * as ruleX` namespace
+// the helpers read. The nine `.js` rules type-resolve with permissive
+// (`any`-param) signatures under `checkJs:false`; `no-spectral-color.ts` (typed)
+// satisfies `CheckTokenRule` because the promised ctx omits `ruleConfig` (above).
+type NamedRule = { id: number; name: string };
+type LintSourceRule = NamedRule & {
+  lintSource(source: string, filePath: string, ctx: LintSourceCtx): void;
+};
+type CheckTokenRule = NamedRule & {
+  checkToken(rawTok: string, parts: ColorParts, ctx: CheckTokenCtx): string | null;
+};
+type CheckValueRule = NamedRule & {
+  checkValue(value: string, ctx: ValueCtx): string | null;
+};
+
+type Violation = { line: number; message: string; ruleId: number };
+type RuleViolation = { message: string; ruleId: number };
+type LintResult = { violations: Violation[]; ignores: number[] };
+
+// ── Dispatch helpers ──────────────────────────────────────────────────────────
+
+function buildDisabledRules(rules: LinterConfig): Set<string> {
   return new Set(
     Object.entries(rules)
       .filter(([, r]) => r.enabled === false)
@@ -34,39 +85,62 @@ function buildDisabledRules(rules) {
 
 // Run a lintSource-based rule against an in-memory source string.
 // Returns [] immediately if the rule name is in disabledRules.
-function lintSourceIfEnabled(disabledRules, ruleModule, source, filePath, tokens, ansi, ruleConfig = {}) {
+function lintSourceIfEnabled(
+  disabledRules: Set<string>,
+  ruleModule: LintSourceRule,
+  source: string,
+  filePath: string,
+  tokens: Tokens,
+  ansi: Ansi,
+  ruleConfig: RuleConfig = {},
+): { line: number; message: string }[] {
   if (disabledRules.has(ruleModule.name)) return [];
-  const found = [];
-  ruleModule.lintSource(source, filePath, {
-    report: (line, message) => found.push({ line, message }),
-    tokens,
-    ansi,
-    ruleConfig,
-  });
+  const found: { line: number; message: string }[] = [];
+  const report: ReportFn = (line, message) => found.push({ line, message });
+  // Built as a local (not an inline literal) so the runtime-only `ruleConfig`
+  // rides along without tripping excess-property checks on `LintSourceCtx`.
+  const ctx = { report, tokens, ansi, ruleConfig };
+  ruleModule.lintSource(source, filePath, ctx);
   return found;
 }
 
 // Run a checkToken-based rule against a single token's pre-split parts.
 // Returns null immediately if the rule name is in disabledRules.
-function checkTokenIfEnabled(disabledRules, ruleModule, rawTok, parts, tokens, ansi, ruleConfig = {}) {
+function checkTokenIfEnabled(
+  disabledRules: Set<string>,
+  ruleModule: CheckTokenRule,
+  rawTok: string,
+  parts: ColorParts,
+  tokens: Tokens,
+  ansi: Ansi,
+  ruleConfig: RuleConfig = {},
+): string | null {
   if (disabledRules.has(ruleModule.name)) return null;
-  return ruleModule.checkToken(rawTok, parts, { tokens, ansi, ruleConfig });
+  // Local (not inline literal) so `ruleConfig` rides along at runtime without
+  // tripping excess-property checks on `CheckTokenCtx` (see the ctx types above).
+  const ctx = { tokens, ansi, ruleConfig };
+  return ruleModule.checkToken(rawTok, parts, ctx);
 }
 
 // Run a checkValue-based rule against a single CSS declaration value.
 // Returns null immediately if the rule name is in disabledRules.
-function checkValueIfEnabled(disabledRules, ruleModule, value, ansi) {
+function checkValueIfEnabled(
+  disabledRules: Set<string>,
+  ruleModule: CheckValueRule,
+  value: string,
+  ansi: Ansi,
+): string | null {
   if (disabledRules.has(ruleModule.name)) return null;
   return ruleModule.checkValue(value, { ansi });
 }
 
-export function createLinter(config, tokens, ansi) {
+export function createLinter(config: LinterConfig, tokens: Tokens, ansi: Ansi) {
   const disabledRules = buildDisabledRules(config);
 
   // Runs all token rules against a single raw token. All rules run — no early returns.
   // The bracket-aware decomposition happens once here; every rule reads the parts.
-  function checkTailwindToken(rawTok) {
-    const found = [];
+  function checkTailwindToken(rawTok: string): RuleViolation[] {
+    const found: RuleViolation[] = [];
     const parts = composeColorParts(rawTok, tokens.colorPrefixes);
     // Not a Candidate — Tailwind would discard this string, so no rule runs.
     if (parts === null) return found;
@@ -98,8 +172,8 @@ export function createLinter(config, tokens, ansi) {
     return found;
   }
 
-  function checkTailwindClasses(classesStr, lineNum) {
-    const violations = [];
+  function checkTailwindClasses(classesStr: string, lineNum: number): Violation[] {
+    const violations: Violation[] = [];
     for (const rawTok of classesStr.split(/\s+/)) {
       if (!rawTok) continue;
       for (const v of checkTailwindToken(rawTok)) {
@@ -114,10 +188,10 @@ export function createLinter(config, tokens, ansi) {
     // each static class string. Only real class lists are scanned — error
     // messages, URLs, and comments never reach the pipeline (root-cause fix).
     // Returns { violations: { line, message, ruleId }[], ignores: number[] }
-    lintTailwindSource(source, filePath) {
+    lintTailwindSource(source: string, filePath?: string): LintResult {
       const ast = parseSource(source, filePath);
       const ignore = ignoredLines(ast);
-      const violations = [];
+      const violations: Violation[] = [];
 
       walk(ast.program, (node) => {
         if (node.type !== "JSXOpeningElement") return;
@@ -139,7 +213,7 @@ export function createLinter(config, tokens, ansi) {
 
     // Checks inline style={{ color/backgroundColor }} props.
     // Returns { violations: { line, message, ruleId }[], ignores: [] }
-    lintStyleSource(source, filePath) {
+    lintStyleSource(source: string, filePath: string): LintResult {
       const violations = lintSourceIfEnabled(disabledRules, ruleStyleColor, source, filePath, {}, ansi, config[ruleStyleColor.name])
         .map((v) => ({ ...v, ruleId: ruleStyleColor.id }));
       return { violations, ignores: [] };
@@ -147,7 +221,7 @@ export function createLinter(config, tokens, ansi) {
 
     // Checks hover: variant used on non-interactive elements.
     // Returns { violations: { line, message, ruleId }[], ignores: [] }
-    lintHoverSource(source, filePath) {
+    lintHoverSource(source: string, filePath: string): LintResult {
       const violations = lintSourceIfEnabled(disabledRules, ruleHoverInteractive, source, filePath, tokens, ansi, config[ruleHoverInteractive.name])
         .map((v) => ({ ...v, ruleId: ruleHoverInteractive.id }));
       return { violations, ignores: [] };
@@ -155,7 +229,7 @@ export function createLinter(config, tokens, ansi) {
 
     // Checks shadcn UI component color overrides.
     // Returns { violations: { line, message, ruleId }[], ignores: [] }
-    lintComponentSource(source, filePath) {
+    lintComponentSource(source: string, filePath: string): LintResult {
       const violations = lintSourceIfEnabled(disabledRules, ruleUiColorOverride, source, filePath, tokens, ansi, config[ruleUiColorOverride.name])
         .map((v) => ({ ...v, ruleId: ruleUiColorOverride.id }));
       return { violations, ignores: [] };
@@ -165,11 +239,11 @@ export function createLinter(config, tokens, ansi) {
     // Walks the PostCSS CST so color detection sees only declaration values and
     // @apply params — never selectors or at-rule preludes (findings #7, #8).
     // Returns { violations: { line, message, ruleId }[], ignores: number[] }
-    lintCssSource(source, isExempt) {
-      const violations = [];
-      const ignores = [];
+    lintCssSource(source: string, isExempt: boolean): LintResult {
+      const violations: Violation[] = [];
+      const ignores: number[] = [];
 
-      let root;
+      let root: Root;
       try {
         root = postcss.parse(source);
       } catch {
@@ -180,7 +254,7 @@ export function createLinter(config, tokens, ansi) {
 
       // A `/* color-lint-ignore */` comment suppresses violations on its own
       // line (matching the previous line-based behaviour) and is counted.
-      const ignoredLines = new Set();
+      const ignoredLines = new Set<number>();
       root.walkComments((comment) => {
         if (comment.text.trim() !== "color-lint-ignore") return;
         const line = comment.source?.start?.line;
@@ -194,13 +268,16 @@ export function createLinter(config, tokens, ansi) {
         const line = decl.source?.start?.line;
         if (line && ignoredLines.has(line)) return;
         const msg = checkValueIfEnabled(disabledRules, ruleRawCssColor, decl.value, ansi);
-        if (msg) violations.push({ line, message: msg, ruleId: ruleRawCssColor.id });
+        // line!: PostCSS always populates a parsed node's source position; the
+        // original JS pushed `line` unguarded, so this preserves that behaviour.
+        if (msg) violations.push({ line: line!, message: msg, ruleId: ruleRawCssColor.id });
       });
 
       root.walkAtRules("apply", (atRule) => {
         const line = atRule.source?.start?.line;
         if (line && ignoredLines.has(line)) return;
-        violations.push(...checkTailwindClasses(atRule.params, line));
+        // line!: same invariant as above — parsed at-rules always carry a line.
+        violations.push(...checkTailwindClasses(atRule.params, line!));
       });
 
       return { violations, ignores };

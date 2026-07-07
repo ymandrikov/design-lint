@@ -28,7 +28,7 @@ interface RuleConfig {
   replacement?: ReplacementMap;
 }
 
-// Built by checkTokenIfEnabled in linter.js.
+// Built by checkTokenIfEnabled in linter.ts.
 interface Ctx {
   tokens: ClassifierTokens;
   ansi: Ansi;

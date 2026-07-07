@@ -27,7 +27,7 @@ import * as ruleHoverInteractive from "./rules/no-useless-hover.js";
 import * as ruleUiColorOverride from "./rules/no-component-color-override.js";
 import * as ruleUndefinedToken from "./rules/no-undefined-token.js";
 
-import { createLinter } from "./linter.js";
+import { createLinter } from "./linter.ts";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const ROOT = process.argv[2] ? resolve(process.argv[2]) : join(__dirname, "../..");
