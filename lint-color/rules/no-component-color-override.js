@@ -13,7 +13,7 @@ import {
   styleObjectProps,
   ignoredLines,
   offsetToLine,
-} from "../ast.js";
+} from "../ast.ts";
 import { classifyColorPart, composeColorParts } from "../classify.js";
 import { findRawColor } from "./no-raw-css-color.js";
 

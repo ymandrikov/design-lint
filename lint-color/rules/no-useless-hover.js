@@ -11,7 +11,7 @@ import {
   classNameStatics,
   ignoredLines,
   offsetToLine,
-} from "../ast.js";
+} from "../ast.ts";
 
 // Elements and components that are inherently interactive (hover feedback is valid).
 const INTERACTIVE_TAGS = new Set([

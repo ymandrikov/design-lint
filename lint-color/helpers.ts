@@ -9,7 +9,7 @@ import {
   classNameStatics,
   ignoredLines,
   offsetToLine,
-} from "./ast.js";
+} from "./ast.ts";
 
 export type Ansi = { red: (s: string) => string; blue: (s: string) => string };
 export type ReportFn = (line: number, message: string) => void;

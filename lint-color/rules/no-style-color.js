@@ -11,7 +11,7 @@ import {
   styleObjectProps,
   ignoredLines,
   offsetToLine,
-} from "../ast.js";
+} from "../ast.ts";
 
 // lintSource(source, filePath, ctx)
 // ctx.report(lineNum, message) called for each violation.

@@ -10,7 +10,7 @@ import {
   classNameStatics,
   ignoredLines,
   offsetToLine,
-} from "./ast.js";
+} from "./ast.ts";
 import { composeColorParts } from "./classify.js";
 
 import * as ruleStyleColor from "./rules/no-style-color.js";
