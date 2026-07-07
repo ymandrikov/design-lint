@@ -1,23 +1,20 @@
-// Rule 4 — No spectral (palette) Tailwind color classes.
-// E.g. bg-red-500, text-blue-200. Use a design token instead.
-// When colors.json provides a replacement map, the error message names the token to use.
+// No spectral (palette) Tailwind color classes — e.g. bg-red-500, text-blue-200.
+// Use a design token instead. When colors.json supplies a replacement map, the
+// message names the token to use.
 
 import { classifyParts, findSpectralMatch, composeColorParts } from "../classify.js";
 
 export const id = 4;
 export const name = "no-spectral-color";
 
-// Decomposed candidate. Derived from the classifier's source of truth so it can't drift.
 // Non-null: the linter guards `parts === null` and `!parts.base` before this rule runs.
 type Parts = NonNullable<ReturnType<typeof composeColorParts>>;
 
-// The two ansi helpers this rule calls (the runtime object also carries `dim`, unused here).
 interface Ansi {
   red(s: string): string;
   blue(s: string): string;
 }
 
-// The token sets classifyParts / findSpectralMatch read (matches their JSDoc `tokens` param).
 interface ClassifierTokens {
   semanticSet?: Set<string>;
   spectralSet?: Set<string>;
@@ -31,15 +28,13 @@ interface RuleConfig {
   replacement?: ReplacementMap;
 }
 
-// Rule invocation context, built by checkTokenIfEnabled in shared.js.
+// Built by checkTokenIfEnabled in shared.js.
 interface Ctx {
   tokens: ClassifierTokens;
   ansi: Ansi;
   ruleConfig?: RuleConfig;
 }
 
-// Look up a semantic replacement for (colorPrefix, colorName, numericScale).
-// replacement format: { text: [{ "green-400...600": "success-content" }, ...], bg: [...] }
 function findReplacement(
   replacement: ReplacementMap,
   colorPrefix: string,
@@ -65,18 +60,15 @@ function findReplacement(
   return null;
 }
 
-// checkToken(rawTok, parts, ctx) → message string or null.
-// Fires on the classifier's "spectral" verdict (palette name + numeric shade behind
-// a color prefix), mirroring no-var-color / no-raw-css-color. The matched name+shade
-// for the replacement hint come from the same shared scan (findSpectralMatch), so the
-// rule keeps no private detection loop of its own.
+// Fires on the classifier's "spectral" verdict, mirroring no-var-color / no-raw-css-color.
+// The hint's name+shade come from the same shared scan (findSpectralMatch), so the rule
+// keeps no private detection loop of its own.
 export function checkToken(rawTok: string, parts: Parts, ctx: Ctx): string | null {
   const { tokens, ansi, ruleConfig } = ctx;
   if (classifyParts(parts, tokens) !== "spectral") return null;
   const { base, colorPrefix } = parts;
-  // The "spectral" verdict guarantees colorPart is set and that the shared scan matches
-  // (classifyParts derives the verdict from this same findSpectralMatch call), so both
-  // non-null assertions are sound — one shared scan, no private detection loop.
+  // The "spectral" verdict is derived from this same findSpectralMatch call, so colorPart
+  // is set and the scan matches — both non-null assertions are sound.
   const { name: colorName, shade } = findSpectralMatch(parts.colorPart!, tokens.spectralSet)!;
   const semantic =
     colorPrefix && ruleConfig?.replacement
