@@ -1,5 +1,3 @@
-// File discovery — recursive walk + Storybook detection.
-
 import { readdirSync } from "node:fs";
 import { extname, join } from "node:path";
 

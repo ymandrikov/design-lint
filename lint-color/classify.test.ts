@@ -314,9 +314,7 @@ describe("oracle — splitter agrees with Tailwind parseCandidate", () => {
       }
       expect(parsed.length).toBeGreaterThan(0);
       const pc = parsed[0];
-      // variant count agrees
       expect(actual.variants.length).toBe(pc.variants.length);
-      // Modifier presence agrees
       expect(actual.modifier === null).toBe(pc.modifier === null);
       // base carries Tailwind's utility root (root is syntactic — prefix only;
       // value-level agreement is the exact-output test's job). An arbitrary-

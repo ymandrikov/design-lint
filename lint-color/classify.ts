@@ -12,13 +12,10 @@ import { isColor } from "./vendor/is-color.js";
 //   null       — not a color ("[url(…)]", "red-foo")
 export type ColorVerdict = "semantic" | "spectral" | "static" | "raw" | "var" | null;
 
-// The design-system token sets a classification consults; both optional.
 export type Tokens = { semanticSet?: Set<string>; spectralSet?: Set<string> };
 
-// First decomposition of a raw candidate.
 export type SplitToken = { variants: string[]; base: string; modifier: string | null };
 
-// A palette-name-plus-shade hit inside a color part.
 export type SpectralMatch = { name: string; shade: string };
 
 // A parsed whole-base "[property:value]".

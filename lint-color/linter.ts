@@ -84,7 +84,6 @@ function buildDisabledRules(rules: LinterConfig): Set<string> {
 }
 
 // Run a lintSource-based rule against an in-memory source string.
-// Returns [] immediately if the rule name is in disabledRules.
 function lintSourceIfEnabled(
   disabledRules: Set<string>,
   ruleModule: LintSourceRule,
@@ -105,7 +104,6 @@ function lintSourceIfEnabled(
 }
 
 // Run a checkToken-based rule against a single token's pre-split parts.
-// Returns null immediately if the rule name is in disabledRules.
 function checkTokenIfEnabled(
   disabledRules: Set<string>,
   ruleModule: CheckTokenRule,
@@ -123,7 +121,6 @@ function checkTokenIfEnabled(
 }
 
 // Run a checkValue-based rule against a single CSS declaration value.
-// Returns null immediately if the rule name is in disabledRules.
 function checkValueIfEnabled(
   disabledRules: Set<string>,
   ruleModule: CheckValueRule,
@@ -187,7 +184,6 @@ export function createLinter(config: LinterConfig, tokens: Tokens, ansi: Ansi) {
     // Walks className/class attribute values and runs the full token pipeline on
     // each static class string. Only real class lists are scanned — error
     // messages, URLs, and comments never reach the pipeline (root-cause fix).
-    // Returns { violations: { line, message, ruleId }[], ignores: number[] }
     lintTailwindSource(source: string, filePath?: string): LintResult {
       const ast = parseSource(source, filePath);
       const ignore = ignoredLines(ast);
@@ -212,7 +208,6 @@ export function createLinter(config: LinterConfig, tokens: Tokens, ansi: Ansi) {
     },
 
     // Checks inline style={{ color/backgroundColor }} props.
-    // Returns { violations: { line, message, ruleId }[], ignores: [] }
     lintStyleSource(source: string, filePath: string): LintResult {
       const violations = lintSourceIfEnabled(disabledRules, ruleStyleColor, source, filePath, {}, ansi, config[ruleStyleColor.name])
         .map((v) => ({ ...v, ruleId: ruleStyleColor.id }));
@@ -220,7 +215,6 @@ export function createLinter(config: LinterConfig, tokens: Tokens, ansi: Ansi) {
     },
 
     // Checks hover: variant used on non-interactive elements.
-    // Returns { violations: { line, message, ruleId }[], ignores: [] }
     lintHoverSource(source: string, filePath: string): LintResult {
       const violations = lintSourceIfEnabled(disabledRules, ruleHoverInteractive, source, filePath, tokens, ansi, config[ruleHoverInteractive.name])
         .map((v) => ({ ...v, ruleId: ruleHoverInteractive.id }));
@@ -228,7 +222,6 @@ export function createLinter(config: LinterConfig, tokens: Tokens, ansi: Ansi) {
     },
 
     // Checks shadcn UI component color overrides.
-    // Returns { violations: { line, message, ruleId }[], ignores: [] }
     lintComponentSource(source: string, filePath: string): LintResult {
       const violations = lintSourceIfEnabled(disabledRules, ruleUiColorOverride, source, filePath, tokens, ansi, config[ruleUiColorOverride.name])
         .map((v) => ({ ...v, ruleId: ruleUiColorOverride.id }));
@@ -238,7 +231,6 @@ export function createLinter(config: LinterConfig, tokens: Tokens, ansi: Ansi) {
     // Checks CSS source for raw color values and Tailwind tokens in @apply directives.
     // Walks the PostCSS CST so color detection sees only declaration values and
     // @apply params — never selectors or at-rule preludes (findings #7, #8).
-    // Returns { violations: { line, message, ruleId }[], ignores: number[] }
     lintCssSource(source: string, isExempt: boolean): LintResult {
       const violations: Violation[] = [];
       const ignores: number[] = [];

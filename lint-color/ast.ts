@@ -19,8 +19,6 @@ import type {
   Expression,
 } from "oxc-parser";
 
-// The parsed value every rule consumes: the oxc program and comments, plus the
-// offset→line index and the lazily-computed suppressed-line set.
 export type ParsedAst = {
   program: Program;
   comments: Comment[];
@@ -28,18 +26,15 @@ export type ParsedAst = {
   ignored: Set<number> | null;
 };
 
-// A static class string with the node whose offset locates it.
 export type ClassStatic = { text: string; node: Node };
 
 // One own property of a `style={{…}}` object literal.
 export type StyleProp = { keyName: string; valueNode: Expression; node: ObjectProperty };
 
-// `.tsx` parses JSX; `.ts` must not (see langForFile).
 type Lang = "tsx" | "ts";
 
 // ── Line mapping ────────────────────────────────────────────────────────────
-// oxc nodes carry byte/char offsets (Span), not 1-based lines. These map an
-// offset to the line the current CLI output uses.
+// oxc nodes carry byte/char offsets (Span), not 1-based lines.
 
 export function buildLineStarts(src: string): number[] {
   const starts = [0];
@@ -88,7 +83,6 @@ export function parseSource(source: string, filePath = "file.tsx"): ParsedAst {
 }
 
 // ── Traversal ───────────────────────────────────────────────────────────────
-// Depth-first walk. Calls enter(node) for every node with a string `type`.
 // Skips the `parent` back-reference so the walk can't cycle.
 
 export function walk(node: unknown, enter: (node: Node) => void): void {
