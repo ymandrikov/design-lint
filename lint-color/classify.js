@@ -1,88 +1,61 @@
-// Classification layer — the single vocabulary-aligned utility between raw
-// Tailwind candidate strings and the color rules.
-//
-// Owns:
-//   - splitColorToken(rawTok)          decompose a candidate into Tailwind
-//                                      variants, base, and Modifier.
-//   - classifyColorPart(colorPart, …)  semantic | spectral | static | raw | var | null.
-//   - findColorPrefix(base, …)         longest-match color prefix lookup.
-//   - the spectral-color and color-prefix constant sets.
-//
-// Pure, synchronous, no dependency on the loaded Tailwind design system.
-// Tailwind's own `parseCandidate` is used only as a test oracle (ADR 0001);
-// splitting is done with the vendored `segment` primitive (ADR 0002).
-
 import { segment } from "./vendor/segment.js";
 import { isValidArbitrary } from "./vendor/is-valid-arbitrary.js";
 import { decodeArbitraryValue } from "./vendor/decode-arbitrary-value.js";
 import { isColor } from "./vendor/is-color.js";
 
-// All Tailwind v3/v4 built-in palette color names (the ones with numeric scale shades).
 export const TAILWIND_SPECTRAL_COLORS = new Set([
   "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal",
   "cyan", "sky", "blue", "indigo", "violet", "purple", "fuchsia", "pink", "rose",
   "slate", "gray", "zinc", "neutral", "stone",
 ]);
 
-// Tailwind built-in keyword colors that carry a color value WITHOUT a numeric
-// shade (bg-black, text-white, border-transparent, ring-current). Non-semantic,
-// so forbidden like spectral colors — but classified separately because the
-// shade-scan in classifyColorPart can't see them.
 export const TAILWIND_STATIC_COLORS = new Set([
   "black", "white", "transparent", "current", "inherit",
 ]);
 
-// CSS properties that carry a color value, for whole-base arbitrary-property
-// candidates ("[color:red]", "[background-color:#123]"). Seeded from the
-// properties no-style-color forbids inline (`color`, `backgroundColor`) in their
-// CSS kebab spelling. Custom properties (`--*`) are always in the set: a custom
-// property can hold a color, and a token must have exactly one sanctioned
-// spelling — the utility class — so its variable form is a violation too.
 export const CSS_COLOR_PROPERTIES = new Set(["color", "background-color"]);
 
-// isColorProperty(property) → boolean. A CSS declaration property that can carry
-// color for the purposes of arbitrary-property candidates.
 function isColorProperty(property) {
   return property.startsWith("--") || CSS_COLOR_PROPERTIES.has(property.toLowerCase());
 }
 
-// Tailwind utility prefixes that carry a color value.
 export const TAILWIND_COLOR_PREFIXES = [
   "bg", "text", "border", "ring-offset", "ring", "fill", "stroke",
   "from", "to", "via", "divide", "placeholder",
   "caret", "accent", "outline", "decoration", "shadow",
 ];
 
-// A numeric Tailwind shade segment ("500") and a leading `var(` reference.
 const SHADE_RE = /^\d+$/;
 const VAR_REF_RE = /^var\(/i;
 
-// splitColorToken(rawTok) → { variants: string[], base: string, modifier: string | null }
-//
-// Built on Tailwind's own vendored `segment` primitive (ADR 0002), so inner ":"
-// and "/" of arbitrary values, var shorthand, quoted strings, backslash escapes,
-// and "{}" groups are never mistaken for a Tailwind variant separator or a
-// Modifier — separator scanning matches Tailwind's own segment(). Acceptance
-// still differs: we best-effort-decompose strings parseCandidate rejects (see
-// oracleParses in edge-tokens.ts; rejection is a later slice).
-//
-// Contract:
-//   1. Tailwind variants: split on every top-level ":", returned in source order.
-//   2. Modifier: split on the last top-level "/"; null when absent.
-//   3. Important marker "!" (leading or trailing) stripped silently from base.
-//   4. Unbalanced input never throws — a best-effort decomposition is returned.
+// Tailwind important markers: v3 leads with "!" ("!bg-primary"), v4 trails ("bg-primary/50!").
+const isTwV3Important = (s) => s.startsWith("!");
+const isTwV4Important = (s) => s.endsWith("!");
+
+// A bracketed arbitrary value ("[…]") or v4 var shorthand ("(…)").
+const isArbitraryOrVarShorthand = (s) => s[0] === "[" || s[0] === "(";
+
+// e.g. (length:--x), (image:--x)
+const isNonColorTypehint = (typehint) => typehint !== null && typehint !== "color";
+
+// A leftover top-level "/" means a second Modifier survived the split ("bg-red/50/50").
+const hasSecondModifier = (base) => segment(base, "/").length > 1;
+
+// Looks like an arbitrary property ("[…]") but parseArbitraryProperty rejected it → discard.
+const isMalformedArbitraryProperty = (base, arbitrary) => base[0] === "[" && arbitrary === null;
+
+/**
+ * @param {string} rawTok
+ * @returns {{ variants: string[], base: string, modifier: string | null }}
+ */
 export function splitColorToken(rawTok) {
-  // Top-level ":" — every leading segment is a Tailwind variant, the final
-  // segment carries the base and any Modifier.
   const segments = segment(rawTok, ":");
 
   const variants = segments.slice(0, -1);
   let rest = segments[segments.length - 1];
 
-  // v4 important marker sits after the Modifier ("bg-primary/50!") — strip first.
-  if (rest.endsWith("!")) rest = rest.slice(0, -1);
+  if (isTwV4Important(rest)) rest = rest.slice(0, -1);
 
-  // Modifier: the last top-level "/" in the remaining segment.
   const slashParts = segment(rest, "/");
   let base = rest;
   let modifier = null;
@@ -91,115 +64,96 @@ export function splitColorToken(rawTok) {
     base = slashParts.slice(0, -1).join("/");
   }
 
-  // v3 important marker prefixes the base ("!bg-primary"); tolerate a stray
-  // trailing "!" left when there was no Modifier ("bg-primary!").
-  if (base.startsWith("!")) base = base.slice(1);
-  if (base.endsWith("!")) base = base.slice(0, -1);
+  if (isTwV3Important(base)) base = base.slice(1);
+  if (isTwV4Important(base)) base = base.slice(0, -1);
 
   return { variants, base, modifier };
 }
 
-// classifyColorPart(colorPart, tokens) → "semantic" | "spectral" | "static" | "raw" | "var" | null
-//
-// colorPart is the base with its color prefix removed (e.g. "primary",
-// "red-500", "x-red-500", "black", "[color:red]", "(--my-color)").
-//   - semantic  : an exact semantic-token name.
-//   - spectral  : a Tailwind palette color with a NUMERIC shade segment. The
-//                 segment scan handles compound bases like "x-red-500"
-//                 (from "divide-x-red-500") and "blue-200" alike.
-//   - static    : a Tailwind keyword color with no shade (black, white,
-//                 transparent, current, inherit).
-//   - raw       : an arbitrary value that is a literal color — hex, color
-//                 function, CSS named color, `color:`-hinted content, or a var
-//                 reference with a literal-color fallback (`var(--x,red)`).
-//   - var       : a clean CSS-variable reference — `(--x)` shorthand,
-//                 `(color:--x)`, or `[var(--x)]` with no literal fallback.
-//   - null      : provably not a color — a non-color arbitrary value
-//                 (`[url(…)]`), an explicit non-color typehint (`length:`,
-//                 `image:`), no shade (e.g. "red-foo" / "sm"), or empty.
+/**
+ * Locate a palette name immediately followed by a numeric shade inside a color part.
+ * Single source of the spectral scan: consumed by classifyColorPart (for the
+ * "spectral" verdict) and by no-spectral-color (for the replacement-hint name+shade).
+ * @param {string} colorPart  base with color prefix removed ("red-500", "x-red-500")
+ * @param {Set<string>} [spectralSet]
+ * @returns {{ name: string, shade: string } | null}  first match, left to right; null if none
+ */
+export function findSpectralMatch(colorPart, spectralSet) {
+  if (!colorPart || !spectralSet) return null;
+  const segs = colorPart.split("-");
+  for (let i = 0; i < segs.length - 1; i++) {
+    if (spectralSet.has(segs[i]) && SHADE_RE.test(segs[i + 1])) {
+      return { name: segs[i], shade: segs[i + 1] };
+    }
+  }
+  return null;
+}
+
+/**
+ * Verdicts:
+ *   "semantic" — design-token name ("primary")
+ *   "spectral" — palette color + shade ("red-500")
+ *   "static"   — keyword color ("black", "transparent")
+ *   "raw"      — literal color ("[#fff]", "[var(--x,red)]")
+ *   "var"      — clean CSS-var reference ("(--x)", "[var(--x)]")
+ *   null       — not a color ("[url(…)]", "red-foo")
+ * @param {string} colorPart  base with color prefix removed ("primary", "red-500", "[color:red]")
+ * @param {{ semanticSet?: Set<string>, spectralSet?: Set<string> }} tokens
+ * @returns {"semantic" | "spectral" | "static" | "raw" | "var" | null}
+ */
 export function classifyColorPart(colorPart, tokens) {
   if (!colorPart) return null;
   if (tokens.semanticSet?.has(colorPart)) return "semantic";
   if (TAILWIND_STATIC_COLORS.has(colorPart)) return "static";
 
-  // Arbitrary values / var shorthand are decoded and color-checked before the
-  // segment scan, else a bracketed interior that happens to contain a
-  // "<spectral>-<digits>" run (e.g. "(--red-500-rgb)") would be misread as
-  // spectral. Order inside: decode underscores → dataType typehint → var-shape
-  // → is-color (the one definition of "literal color").
-  if (colorPart[0] === "[" || colorPart[0] === "(") {
+  // Before the segment scan, else "(--red-500-rgb)" misreads as spectral.
+  if (isArbitraryOrVarShorthand(colorPart)) {
     return classifyArbitraryColor(colorPart);
   }
 
-  const segs = colorPart.split("-");
-  for (let i = 0; i < segs.length - 1; i++) {
-    if (tokens.spectralSet?.has(segs[i]) && SHADE_RE.test(segs[i + 1])) {
-      return "spectral";
-    }
-  }
+  if (findSpectralMatch(colorPart, tokens.spectralSet)) return "spectral";
 
   return null;
 }
 
-// classifyArbitraryColor(colorPart) → "raw" | "var" | null
-//
-// colorPart is a bracketed arbitrary value ("[…]") or a v4 var shorthand ("(…)").
-// Mirrors the value-classification order Tailwind's parseCandidate uses for an
-// arbitrary color utility: decode underscores, peel an explicit dataType
-// typehint, recognize a CSS-variable reference, then fall back to is-color.
 function classifyArbitraryColor(colorPart) {
   const last = colorPart[colorPart.length - 1];
-
-  // v4 var shorthand: `(--x)` or `(color:--x)`. Tailwind expands it to
-  // `var(<value>)` and requires the value to start with `--`, so it is a
-  // CSS-variable reference — `var` unless it smuggles a literal-color fallback
-  // (`(--x,red)` → `var(--x,red)`), which is raw like the bracketed form.
-  if (colorPart[0] === "(" && last === ")") {
-    const inner = colorPart.slice(1, -1);
-    const parts = segment(inner, ":");
-    const typehint = parts.length === 2 ? parts[0] : null;
-    const value = parts.length === 2 ? parts[1] : inner;
-    // An explicit non-color typehint (`(length:--x)` → a length CSS-var utility)
-    // is not a color — same rule as the bracketed branch below.
-    if (typehint !== null && typehint !== "color") return null;
-    if (!value.startsWith("--")) return null;
-    return classifyVarReference(`var(${value})`);
-  }
-
+  if (colorPart[0] === "(" && last === ")") return classifyVarShorthand(colorPart);
   if (colorPart[0] !== "[" || last !== "]") return null;
-
-  // A bracketed arbitrary value classifies exactly like an arbitrary-property
-  // value once the brackets are peeled — same decode → typehint → var → is-color
-  // order, owned by classifyColorValue.
   return classifyColorValue(colorPart.slice(1, -1));
 }
 
-// extractTypehint(value) → { typehint: string | null, value: string }
-//
-// A leading run of `[a-z-]` characters followed by a top-level ":" is Tailwind's
-// arbitrary-value dataType typehint (`color:red`, `length:200px`). Mirrors the
-// scan in Tailwind's candidate.ts. No typehint ⇒ { typehint: null, value }.
+// v4 var shorthand, e.g. (--x), (color:--x) → var(--x). "raw" if it carries a
+// literal-color fallback (--x,red), else "var".
+function classifyVarShorthand(colorPart) {
+  const inner = colorPart.slice(1, -1);
+  const parts = segment(inner, ":");
+  const typehint = parts.length === 2 ? parts[0] : null;
+  const value = parts.length === 2 ? parts[1] : inner;
+  if (isNonColorTypehint(typehint)) return null;
+  if (!value.startsWith("--")) return null;
+  return classifyVarReference(`var(${value})`);
+}
+
+/**
+ * Peel a leading dataType typehint ("color:red", "length:200px").
+ * @returns {{ typehint: string | null, value: string }}
+ */
 function extractTypehint(value) {
   for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    if (code === 0x3a /* ":" */) {
-      return { typehint: value.slice(0, i), value: value.slice(i + 1) };
-    }
-    // a-z or "-" — still inside a possible typehint.
-    if (code === 0x2d || (code >= 0x61 && code <= 0x7a)) continue;
+    const ch = value[i];
+    if (ch === ":") return { typehint: value.slice(0, i), value: value.slice(i + 1) };
+    if (ch === "-" || (ch >= "a" && ch <= "z")) continue;
     break;
   }
   return { typehint: null, value };
 }
 
-// classifyVarReference(value) → "var" | "raw" | null
-//
-// value is a decoded arbitrary interior. A `var(--x)` reference classifies `var`
-// unless it carries a literal-color fallback (`var(--x, red)`), which is a raw
-// color smuggled through a variable reference. A fallback that is itself a var
-// reference is followed recursively, so a color nested any depth deep
-// (`var(--x, var(--y, red))`) is still caught. Anything that is not a var
-// reference returns null (the caller falls back to is-color).
+/**
+ * Fallbacks recurse, so a color nested any depth is caught (var(--x, var(--y, red))).
+ * @param {string} value  decoded arbitrary interior
+ * @returns {"var" | "raw" | null}  "raw" if a literal-color fallback, null if not a var ref
+ */
 function classifyVarReference(value) {
   if (!VAR_REF_RE.test(value) || value[value.length - 1] !== ")") return null;
   const inner = value.slice(4, -1);
@@ -211,23 +165,15 @@ function classifyVarReference(value) {
   return "var";
 }
 
-// parseArbitraryProperty(base) → { property, value } | null
-//
-// A Tailwind arbitrary-property candidate is a base whose whole form is a bracket
-// group — "[color:red]", "[--my-color:red]" — with no utility prefix. Mirrors
-// parseCandidate's arbitrary-property branch: the base must be bracket-wrapped,
-// the property must start with a-z or "-" (so "[Color:red]", "[0color:red]" are
-// rejected), a first ":" separates property from value, and the value is
-// non-empty. Returns null when base is not an arbitrary property OR is a
-// malformed one — the caller treats a malformed shape as a discarded candidate.
-//
-// The value is returned undecoded (underscores intact); classifyColorValue
-// decodes it, matching how the value is stored on a Candidate.
+/**
+ * Parse a whole-base arbitrary property ("[color:red]", "[--x:red]"). Value
+ * returned undecoded (classifyColorValue decodes). null if not one / malformed.
+ * @returns {{ property: string, value: string } | null}
+ */
 export function parseArbitraryProperty(base) {
   if (base.length < 2 || base[0] !== "[" || base[base.length - 1] !== "]") return null;
-  const c = base.charCodeAt(1);
-  // Property name must start with a-z or "-" (custom properties lead with "--").
-  if (c !== 0x2d && !(c >= 0x61 && c <= 0x7a)) return null;
+  const c = base[1]; // property starts a-z or "-" (custom props lead "--")
+  if (c !== "-" && !(c >= "a" && c <= "z")) return null;
   const colon = base.indexOf(":");
   if (colon === -1) return null;
   const property = base.slice(1, colon);
@@ -236,30 +182,24 @@ export function parseArbitraryProperty(base) {
   return { property, value };
 }
 
-// classifyColorValue(rawValue) → "raw" | "var" | null
-//
-// The value side of an arbitrary-property candidate ("[prop:value]" → value),
-// undecoded. Classified in the same order as an arbitrary utility value
-// (classifyArbitraryColor): decode underscores → peel a dataType typehint →
-// var-shape → is-color. Unlike a utility value there is no paren shorthand — an
-// arbitrary property spells a variable reference as `var(--x)`, never `(--x)`.
+/**
+ * @param {string} rawValue  undecoded value side of an arbitrary property ("[prop:value]")
+ * @returns {"raw" | "var" | null}
+ */
 function classifyColorValue(rawValue) {
   const decoded = decodeArbitraryValue(rawValue);
   const { typehint, value } = extractTypehint(decoded);
-  if (typehint !== null && typehint !== "color") return null;
+  if (isNonColorTypehint(typehint)) return null;
   const varVerdict = classifyVarReference(value);
   if (varVerdict !== null) return varVerdict;
   return isColor(value) ? "raw" : null;
 }
 
-// classifyParts(parts, tokens) → "semantic" | "spectral" | "static" | "raw" | "var" | null
-//
-// The color verdict for a decomposed Candidate, routing both spellings color can
-// take to one classifier so a rule reads a single verdict: a prefixed utility
-// ("bg-[red]", "text-primary") via its colorPart, and an arbitrary-property
-// candidate ("[color:red]") via its property + value. A non-color arbitrary
-// property ("[margin:4px]") is provably not a color and returns null, so only the
-// raw/var rules ever see a property value.
+/**
+ * @param {{ colorPart: string|null, arbitraryProperty: string|null, arbitraryValue: string|null }} parts
+ * @param {{ semanticSet?: Set<string>, spectralSet?: Set<string> }} tokens
+ * @returns {"semantic" | "spectral" | "static" | "raw" | "var" | null}
+ */
 export function classifyParts(parts, tokens) {
   if (parts.arbitraryProperty !== null) {
     if (!isColorProperty(parts.arbitraryProperty)) return null;
@@ -268,10 +208,12 @@ export function classifyParts(parts, tokens) {
   return classifyColorPart(parts.colorPart, tokens);
 }
 
-// findColorPrefix(base, colorPrefixes) → prefix string | null
-//
-// Longest match wins regardless of array order, so "ring-offset" beats "ring"
-// for "ring-offset-2" and "divide-x" is not shadowed by "divide".
+/**
+ * Longest match wins.
+ * @param {string} base
+ * @param {string[]} colorPrefixes
+ * @returns {string | null}
+ */
 export function findColorPrefix(base, colorPrefixes) {
   let best = null;
   for (const p of colorPrefixes) {
@@ -282,41 +224,17 @@ export function findColorPrefix(base, colorPrefixes) {
   return best;
 }
 
-// isDiscardedCandidate(variants, base, modifier) → boolean
-//
-// True when the string is NOT a Candidate — Tailwind's parser would discard it
-// at the syntax level, so it applies no color and every color rule must skip it
-// (glossary: a discarded class is not a Candidate). Registry-free: root/utility
-// existence is never checked, so "bogus-[#123]" is still a Candidate.
-//
-// Mirrors the syntactic reject points of Tailwind's parseCandidate:
-//   - a Tailwind variant that isn't a well-formed arbitrary segment
-//     (unbalanced closers, top-level ";", "{}" — "{a:b}", "]");
-//   - more than one top-level Modifier ("/") — "bg-red-500/50/50";
-//   - a Modifier that is empty or a malformed arbitrary/var value
-//     ("bg-primary/", "…/[]", "…/()");
-//   - an arbitrary value / var shorthand in the base that is unclosed, empty,
-//     or fails isValidArbitrary ("text-[color:red", "bg-[red;]", "bg-[a{b}]").
 function isDiscardedCandidate(variants, base, modifier, arbitrary) {
   for (const v of variants) {
     if (!isValidArbitrary(v)) return true;
   }
-  // A top-level "/" left in the base means a second Modifier survived the split.
-  if (segment(base, "/").length > 1) return true;
+  if (hasSecondModifier(base)) return true;
   if (modifier !== null && !isValidModifier(modifier)) return true;
   if (isArbitraryDiscarded(base)) return true;
-  // A base whose whole form is a bracket group is an arbitrary-property
-  // candidate; a malformed property name/value ("[Color:red]", "[foo]",
-  // "[color:]") makes Tailwind discard it, so it is not a Candidate. The parse
-  // is threaded in from composeColorParts so the base is parsed only once.
-  if (base[0] === "[" && arbitrary === null) return true;
+  if (isMalformedArbitraryProperty(base, arbitrary)) return true;
   return false;
 }
 
-// isValidModifier(mod) → boolean. The Modifier segment after the top-level "/".
-// Bracketed / paren Modifiers must be non-empty and syntactically valid; a named
-// Modifier need only be non-empty (the trailing-slash typo "bg-primary/" yields
-// the empty string here). Full IS_VALID_NAMED_VALUE matching is out of scope.
 function isValidModifier(mod) {
   const first = mod[0];
   const last = mod[mod.length - 1];
@@ -326,54 +244,31 @@ function isValidModifier(mod) {
   return mod.length > 0;
 }
 
-// isValidArbitraryGroup(inner) → boolean. The interior of a bracket/paren group
-// is well-formed when it is non-empty and passes isValidArbitrary (balanced
-// brackets, no top-level ";"). The single predicate behind both a Modifier group
-// and an arbitrary base group.
 function isValidArbitraryGroup(inner) {
   return inner.trim().length > 0 && isValidArbitrary(inner);
 }
 
-// isArbitraryDiscarded(base) → boolean. True when the base carries arbitrary
-// syntax ("[…]" property/value or "(…)" var shorthand) that Tailwind rejects:
-// an unclosed group, an empty group, or interior content that fails
-// isValidArbitrary. Plain bases (no brackets/parens) are never discarded here.
 function isArbitraryDiscarded(base) {
   const b = base.indexOf("[");
   const p = base.indexOf("(");
   if (b === -1 && p === -1) return false;
   const open = b === -1 ? p : p === -1 ? b : Math.min(b, p);
   const closeCh = base[open] === "[" ? "]" : ")";
-  // Must close with the matching bracket as the final character.
+  // The arbitrary group must close at the very last char, else it is
+  // unterminated or has trailing junk ("bg-[#fff", "bg-[#fff]x").
   if (base[base.length - 1] !== closeCh) return true;
   return !isValidArbitraryGroup(base.slice(open + 1, -1));
 }
 
-// composeColorParts(rawTok, colorPrefixes) → { variants, base, modifier, colorPrefix, colorPart } | null
-//
-// The single per-token decomposition the pipeline hands to every token rule, so
-// splitting and color-prefix lookup happen exactly once per candidate. Rules
-// read these glossary-aligned parts instead of re-deriving them.
-//
-// Returns null when rawTok is not a Candidate — Tailwind's parser would discard
-// it at the syntax level (see isDiscardedCandidate). Every rule skips a null
-// decomposition with a single check, so dead classes produce no violations.
-//   - variants / base / modifier : straight from splitColorToken.
-//   - colorPrefix : longest-match color prefix on the base, or null.
-//   - colorPart   : the base with its color prefix removed (the empty string for
-//                   a bare "bg-" template fragment), or null when there is no
-//                   color prefix.
-//   - arbitraryProperty / arbitraryValue : the property and (undecoded) value of
-//                   a whole-base arbitrary-property candidate ("[color:red]"),
-//                   both null otherwise. Set for every valid arbitrary property,
-//                   color or not; classifyParts does the color gating. Mutually
-//                   exclusive with colorPrefix — an arbitrary property has no
-//                   utility prefix.
+/**
+ * @param {string} rawTok
+ * @param {string[]} [colorPrefixes]
+ * @returns {{ variants: string[], base: string, modifier: string|null, colorPrefix: string|null, colorPart: string|null, arbitraryProperty: string|null, arbitraryValue: string|null } | null} null when rawTok is not a Candidate
+ */
 export function composeColorParts(rawTok, colorPrefixes) {
   const { variants, base, modifier } = splitColorToken(rawTok);
-  // Parse the arbitrary-property shape once: an arbitrary property always leads
-  // with "[" and never carries a utility color prefix, so this is the only parse
-  // both the discard check and the returned parts need.
+  // Parse the arbitrary-property shape once — it always leads with "[" and never
+  // has a utility prefix, so both the discard check and returned parts share it.
   const arbitrary = base[0] === "[" ? parseArbitraryProperty(base) : null;
   if (isDiscardedCandidate(variants, base, modifier, arbitrary)) return null;
   const colorPrefix = findColorPrefix(base, colorPrefixes ?? []);

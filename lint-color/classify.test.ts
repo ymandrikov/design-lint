@@ -9,6 +9,7 @@ import {
   classifyParts,
   composeColorParts,
   findColorPrefix,
+  findSpectralMatch,
   splitColorToken,
   TAILWIND_COLOR_PREFIXES,
   TAILWIND_SPECTRAL_COLORS,
@@ -116,6 +117,35 @@ describe("classifyColorPart", () => {
   });
 });
 
+describe("findSpectralMatch — single source of the palette-name+shade scan", () => {
+  const spectralSet = TAILWIND_SPECTRAL_COLORS;
+
+  it("finds a palette name immediately followed by a numeric shade", () => {
+    expect(findSpectralMatch("red-500", spectralSet)).toEqual({ name: "red", shade: "500" });
+    expect(findSpectralMatch("blue-200", spectralSet)).toEqual({ name: "blue", shade: "200" });
+    expect(findSpectralMatch("green-100", spectralSet)).toEqual({ name: "green", shade: "100" });
+  });
+
+  it("scans a compound base (x-red-500 from divide-x-red-500)", () => {
+    expect(findSpectralMatch("x-red-500", spectralSet)).toEqual({ name: "red", shade: "500" });
+  });
+
+  it("returns null for a bare palette name with no shade", () => {
+    expect(findSpectralMatch("red", spectralSet)).toBeNull();
+  });
+
+  it("returns null for non-color and semantic parts", () => {
+    expect(findSpectralMatch("sm", spectralSet)).toBeNull();
+    expect(findSpectralMatch("cover", spectralSet)).toBeNull();
+    expect(findSpectralMatch("primary", spectralSet)).toBeNull();
+  });
+
+  it("returns null for an empty color part or nullish spectralSet", () => {
+    expect(findSpectralMatch("", spectralSet)).toBeNull();
+    expect(findSpectralMatch("red-500", undefined)).toBeNull();
+  });
+});
+
 describe("composeColorParts — discarded strings return null", () => {
   const parts = (tok: string) => composeColorParts(tok, TAILWIND_COLOR_PREFIXES);
 
@@ -194,7 +224,8 @@ describe("classifyParts — routes both spellings to one verdict (issue 05)", ()
     spectralSet: TAILWIND_SPECTRAL_COLORS,
   };
   const verdict = (tok: string) =>
-    classifyParts(composeColorParts(tok, TAILWIND_COLOR_PREFIXES), tokens);
+    // Every token here is a valid candidate → composeColorParts never returns null.
+    classifyParts(composeColorParts(tok, TAILWIND_COLOR_PREFIXES)!, tokens);
 
   it("classifies a literal color behind a color property as raw", () => {
     expect(verdict("[color:red]")).toBe("raw");

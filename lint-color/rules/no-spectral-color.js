@@ -2,6 +2,8 @@
 // E.g. bg-red-500, text-blue-200. Use a design token instead.
 // When colors.json provides a replacement map, the error message names the token to use.
 
+import { classifyParts, findSpectralMatch } from "../classify.js";
+
 export const id = 4;
 export const name = "no-spectral-color";
 
@@ -28,24 +30,20 @@ function findReplacement(replacement, colorPrefix, colorName, scale) {
 }
 
 // checkToken(rawTok, parts, ctx) → message string or null.
-// Reads the pre-split base and color prefix; scans the base's internal segments
-// for a spectral name followed by a numeric shade.
+// Fires on the classifier's "spectral" verdict (palette name + numeric shade behind
+// a color prefix), mirroring no-var-color / no-raw-css-color. The matched name+shade
+// for the replacement hint come from the same shared scan (findSpectralMatch), so the
+// rule keeps no private detection loop of its own.
 export function checkToken(rawTok, parts, ctx) {
   const { tokens, ansi, ruleConfig } = ctx;
+  if (classifyParts(parts, tokens) !== "spectral") return null;
   const { base, colorPrefix } = parts;
-  const segs = base.split("-");
-  // Scan all internal segments to handle e.g. "divide-x-red-500", "ring-offset-blue-200".
-  for (let i = 1; i < segs.length - 1; i++) {
-    if (tokens.spectralSet.has(segs[i]) && /^\d+$/.test(segs[i + 1])) {
-      const colorName = segs[i];
-      const scale = segs[i + 1];
-      const semantic =
-        colorPrefix && ruleConfig?.replacement
-          ? findReplacement(ruleConfig.replacement, colorPrefix, colorName, scale)
-          : null;
-      const hint = semantic ? ` — try ${ansi.blue(colorPrefix + "-" + semantic)}` : "";
-      return `${ansi.red(base)} — spectral color class; use a design token instead${hint}`;
-    }
-  }
-  return null;
+  // The "spectral" verdict guarantees a match on the color part (one shared scan).
+  const { name: colorName, shade } = findSpectralMatch(parts.colorPart, tokens.spectralSet);
+  const semantic =
+    colorPrefix && ruleConfig?.replacement
+      ? findReplacement(ruleConfig.replacement, colorPrefix, colorName, shade)
+      : null;
+  const hint = semantic ? ` — try ${ansi.blue(colorPrefix + "-" + semantic)}` : "";
+  return `${ansi.red(base)} — spectral color class; use a design token instead${hint}`;
 }
