@@ -25,10 +25,17 @@ describe("CLI against fixtures/demo-app", () => {
 
     // rule 1 — style prop color
     expect(out).toContain("No color or backgroundColor in style= props (1)");
-    // rule 2 — raw colors: arbitrary value + card.css. The style literal
-    // `color: "#ff0000"` is no longer double-flagged here (Change C: the token
-    // pipeline scans className only) — it is still caught by rule 1 below.
-    expect(out).toContain("No raw color values in component CSS. Use semantic tokens instead (2)");
+    // rule 2 — raw colors (6): card.css hex + card.css named color + four
+    // className arbitrary forms. The style literal `color: "#ff0000"` is no
+    // longer double-flagged here (Change C: the token pipeline scans className
+    // only) — it is still caught by rule 1 above.
+    expect(out).toContain("No raw color values in component CSS. Use semantic tokens instead (6)");
+    // named color in CSS is now raw (CSS path shares the vendored is-color)
+    expect(out).toContain("Raw color value rebeccapurple");
+    // arbitrary-value raw colors: named, var-with-literal-fallback, arb-property
+    expect(out).toContain("bg-[red]");
+    expect(out).toContain("bg-[var(--x,red)]");
+    expect(out).toContain("[color:red]");
     // rule 3 — opacity modifier: numeric + arbitrary + var-shorthand (finding #3)
     // + static keyword color (bg-black/50). text-sm/6 (line-height) is seeded too
     // but must NOT fire — hence 4, not 5.
@@ -38,9 +45,18 @@ describe("CLI against fixtures/demo-app", () => {
     expect(out).toContain("bg-primary/(--alpha)");
     expect(out).toContain("bg-black/50");
     expect(out).not.toContain("text-sm/6");
-    // rule 4 — spectral: app.tsx + card.css @apply
+    // rule 6 — no-var-color (3): var shorthand, color:-hinted var, arb-property var.
+    // All reference a real semantic token yet still fire — one sanctioned spelling.
+    // Count (3) pins that all three fire; the two prefixed spellings identify which.
+    expect(out).toContain("No CSS variable behind a color class. Use the token's semantic utility class instead (3)");
+    expect(out).toContain("bg-(--color-primary)");
+    expect(out).toContain("text-[color:var(--color-primary)]");
+    // rule 4 — spectral: app.tsx + card.css @apply. The invalid candidate
+    // bg-red-500/50/50 (double modifier) is discarded by Tailwind, so spectral
+    // stays 2 — asserted directly below as a zero-violation guard.
     expect(out).toContain("No spectral (palette) Tailwind color classes. Use semantic tokens instead (2)");
     expect(out).toContain("try text-success-content");
+    expect(out).not.toContain("bg-red-500/50/50");
     // rule 5 — token constraints: text-muted + hover:bg-primary
     expect(out).toContain("Color class violates token constraints (2)");
     expect(out).toContain("use bg-primary-hover");
@@ -58,7 +74,12 @@ describe("CLI against fixtures/demo-app", () => {
     expect(out).toContain("bg-nonexistent");
     expect(out).toContain("bg-red-foo");
 
-    expect(out).toContain("16 violations found.");
+    // Invalid candidates and non-color typehints (bg-red-500/50/50,
+    // bg-[length:200px], bg-[image:url(x)]) are seeded but never fire — the total
+    // stays 23 and every per-rule count above is exact, so any false positive on
+    // them would break one of those counts. Verdict-level coverage lives in the
+    // classify/rule unit suites; here the exact total is the wiring guard.
+    expect(out).toContain("23 violations found.");
     expect(out).toContain("(1 line suppressed with color-lint-ignore)");
   });
 

@@ -6,3 +6,9 @@
 .card-title {
   color: var(--color-primary);
 }
+
+/* rule 2: no-raw-css-color — a CSS named color is a raw color too, now that
+   the CSS path shares the vendored is-color definition (not just hex/funcs). */
+.card-border {
+  border-color: rebeccapurple;
+}

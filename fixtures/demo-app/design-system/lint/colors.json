@@ -10,6 +10,10 @@
       "enabled": true,
       "description": "No raw color values in component CSS. Use semantic tokens instead"
     },
+    "no-var-color": {
+      "enabled": true,
+      "description": "No CSS variable behind a color class. Use the token's semantic utility class instead"
+    },
     "no-opacity-modifier": {
       "enabled": true,
       "description": "No opacity modifiers on color classes. Add a semantic token instead"

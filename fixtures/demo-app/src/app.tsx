@@ -11,6 +11,31 @@ export function App() {
       {/* rule 2: no-raw-css-color — raw color in arbitrary value */}
       <div className="bg-[#123456]">raw</div>
 
+      {/* rule 2: no-raw-css-color — named color inside an arbitrary value */}
+      <div className="bg-[red]">arb-named</div>
+
+      {/* rule 2: no-raw-css-color — var() with a literal-color fallback is raw */}
+      <div className="bg-[var(--x,red)]">var-fallback</div>
+
+      {/* rule 2: no-raw-css-color — arbitrary-property candidate applying a raw color */}
+      <div className="[color:red]">arb-prop-raw</div>
+
+      {/* rule 6: no-var-color — v4 var shorthand behind a color prefix */}
+      <div className="bg-(--color-primary)">var-shorthand</div>
+
+      {/* rule 6: no-var-color — bracketed color: typehinted var reference */}
+      <span className="text-[color:var(--color-primary)]">var-hinted</span>
+
+      {/* rule 6: no-var-color — arbitrary-property candidate referencing a var */}
+      <div className="[color:var(--color-primary)]">arb-prop-var</div>
+
+      {/* clean: invalid candidate (double modifier) — Tailwind discards it, so
+          every rule stays silent. No spectral, no opacity, no violation. */}
+      <div className="bg-red-500/50/50">invalid-dead-class</div>
+
+      {/* clean: explicit non-color typehints never false-positive (story 7) */}
+      <div className="bg-[length:200px] bg-[image:url(x)]">typehints</div>
+
       {/* rule 3: no-opacity-modifier */}
       <div className="bg-primary/50">translucent</div>
 
