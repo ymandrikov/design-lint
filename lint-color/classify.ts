@@ -3,23 +3,55 @@ import { isValidArbitrary } from "./vendor/is-valid-arbitrary.js";
 import { decodeArbitraryValue } from "./vendor/decode-arbitrary-value.js";
 import { isColor } from "./vendor/is-color.js";
 
-export const TAILWIND_SPECTRAL_COLORS = new Set([
+// Verdicts:
+//   "semantic" — design-token name ("primary")
+//   "spectral" — palette color + shade ("red-500")
+//   "static"   — keyword color ("black", "transparent")
+//   "raw"      — literal color ("[#fff]", "[var(--x,red)]")
+//   "var"      — clean CSS-var reference ("(--x)", "[var(--x)]")
+//   null       — not a color ("[url(…)]", "red-foo")
+export type ColorVerdict = "semantic" | "spectral" | "static" | "raw" | "var" | null;
+
+// The design-system token sets a classification consults; both optional.
+export type Tokens = { semanticSet?: Set<string>; spectralSet?: Set<string> };
+
+// First decomposition of a raw candidate.
+export type SplitToken = { variants: string[]; base: string; modifier: string | null };
+
+// A palette-name-plus-shade hit inside a color part.
+export type SpectralMatch = { name: string; shade: string };
+
+// A parsed whole-base "[property:value]".
+export type ArbitraryProperty = { property: string; value: string };
+
+// The full composition of a candidate — a SplitToken plus the color-prefix split.
+export type ColorParts = {
+  variants: string[];
+  base: string;
+  modifier: string | null;
+  colorPrefix: string | null;
+  colorPart: string | null;
+  arbitraryProperty: string | null;
+  arbitraryValue: string | null;
+};
+
+export const TAILWIND_SPECTRAL_COLORS = new Set<string>([
   "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal",
   "cyan", "sky", "blue", "indigo", "violet", "purple", "fuchsia", "pink", "rose",
   "slate", "gray", "zinc", "neutral", "stone",
 ]);
 
-export const TAILWIND_STATIC_COLORS = new Set([
+export const TAILWIND_STATIC_COLORS = new Set<string>([
   "black", "white", "transparent", "current", "inherit",
 ]);
 
-export const CSS_COLOR_PROPERTIES = new Set(["color", "background-color"]);
+export const CSS_COLOR_PROPERTIES = new Set<string>(["color", "background-color"]);
 
-function isColorProperty(property) {
+function isColorProperty(property: string): boolean {
   return property.startsWith("--") || CSS_COLOR_PROPERTIES.has(property.toLowerCase());
 }
 
-export const TAILWIND_COLOR_PREFIXES = [
+export const TAILWIND_COLOR_PREFIXES: string[] = [
   "bg", "text", "border", "ring-offset", "ring", "fill", "stroke",
   "from", "to", "via", "divide", "placeholder",
   "caret", "accent", "outline", "decoration", "shadow",
@@ -29,26 +61,24 @@ const SHADE_RE = /^\d+$/;
 const VAR_REF_RE = /^var\(/i;
 
 // Tailwind important markers: v3 leads with "!" ("!bg-primary"), v4 trails ("bg-primary/50!").
-const isTwV3Important = (s) => s.startsWith("!");
-const isTwV4Important = (s) => s.endsWith("!");
+const isTwV3Important = (s: string): boolean => s.startsWith("!");
+const isTwV4Important = (s: string): boolean => s.endsWith("!");
 
 // A bracketed arbitrary value ("[…]") or v4 var shorthand ("(…)").
-const isArbitraryOrVarShorthand = (s) => s[0] === "[" || s[0] === "(";
+const isArbitraryOrVarShorthand = (s: string): boolean => s[0] === "[" || s[0] === "(";
 
 // e.g. (length:--x), (image:--x)
-const isNonColorTypehint = (typehint) => typehint !== null && typehint !== "color";
+const isNonColorTypehint = (typehint: string | null): boolean =>
+  typehint !== null && typehint !== "color";
 
 // A leftover top-level "/" means a second Modifier survived the split ("bg-red/50/50").
-const hasSecondModifier = (base) => segment(base, "/").length > 1;
+const hasSecondModifier = (base: string): boolean => segment(base, "/").length > 1;
 
 // Looks like an arbitrary property ("[…]") but parseArbitraryProperty rejected it → discard.
-const isMalformedArbitraryProperty = (base, arbitrary) => base[0] === "[" && arbitrary === null;
+const isMalformedArbitraryProperty = (base: string, arbitrary: ArbitraryProperty | null): boolean =>
+  base[0] === "[" && arbitrary === null;
 
-/**
- * @param {string} rawTok
- * @returns {{ variants: string[], base: string, modifier: string | null }}
- */
-export function splitColorToken(rawTok) {
+export function splitColorToken(rawTok: string): SplitToken {
   const segments = segment(rawTok, ":");
 
   const variants = segments.slice(0, -1);
@@ -58,7 +88,7 @@ export function splitColorToken(rawTok) {
 
   const slashParts = segment(rest, "/");
   let base = rest;
-  let modifier = null;
+  let modifier: string | null = null;
   if (slashParts.length > 1) {
     modifier = slashParts[slashParts.length - 1];
     base = slashParts.slice(0, -1).join("/");
@@ -74,11 +104,10 @@ export function splitColorToken(rawTok) {
  * Locate a palette name immediately followed by a numeric shade inside a color part.
  * Single source of the spectral scan: consumed by classifyColorPart (for the
  * "spectral" verdict) and by no-spectral-color (for the replacement-hint name+shade).
- * @param {string} colorPart  base with color prefix removed ("red-500", "x-red-500")
- * @param {Set<string>} [spectralSet]
- * @returns {{ name: string, shade: string } | null}  first match, left to right; null if none
+ * @param colorPart  base with color prefix removed ("red-500", "x-red-500")
+ * @returns first match, left to right; null if none
  */
-export function findSpectralMatch(colorPart, spectralSet) {
+export function findSpectralMatch(colorPart: string, spectralSet?: Set<string>): SpectralMatch | null {
   if (!colorPart || !spectralSet) return null;
   const segs = colorPart.split("-");
   for (let i = 0; i < segs.length - 1; i++) {
@@ -90,18 +119,9 @@ export function findSpectralMatch(colorPart, spectralSet) {
 }
 
 /**
- * Verdicts:
- *   "semantic" — design-token name ("primary")
- *   "spectral" — palette color + shade ("red-500")
- *   "static"   — keyword color ("black", "transparent")
- *   "raw"      — literal color ("[#fff]", "[var(--x,red)]")
- *   "var"      — clean CSS-var reference ("(--x)", "[var(--x)]")
- *   null       — not a color ("[url(…)]", "red-foo")
- * @param {string} colorPart  base with color prefix removed ("primary", "red-500", "[color:red]")
- * @param {{ semanticSet?: Set<string>, spectralSet?: Set<string> }} tokens
- * @returns {"semantic" | "spectral" | "static" | "raw" | "var" | null}
+ * @param colorPart  base with color prefix removed ("primary", "red-500", "[color:red]")
  */
-export function classifyColorPart(colorPart, tokens) {
+export function classifyColorPart(colorPart: string | null, tokens: Tokens): ColorVerdict {
   if (!colorPart) return null;
   if (tokens.semanticSet?.has(colorPart)) return "semantic";
   if (TAILWIND_STATIC_COLORS.has(colorPart)) return "static";
@@ -116,7 +136,7 @@ export function classifyColorPart(colorPart, tokens) {
   return null;
 }
 
-function classifyArbitraryColor(colorPart) {
+function classifyArbitraryColor(colorPart: string): ColorVerdict {
   const last = colorPart[colorPart.length - 1];
   if (colorPart[0] === "(" && last === ")") return classifyVarShorthand(colorPart);
   if (colorPart[0] !== "[" || last !== "]") return null;
@@ -125,7 +145,7 @@ function classifyArbitraryColor(colorPart) {
 
 // v4 var shorthand, e.g. (--x), (color:--x) → var(--x). "raw" if it carries a
 // literal-color fallback (--x,red), else "var".
-function classifyVarShorthand(colorPart) {
+function classifyVarShorthand(colorPart: string): ColorVerdict {
   const inner = colorPart.slice(1, -1);
   const parts = segment(inner, ":");
   const typehint = parts.length === 2 ? parts[0] : null;
@@ -137,9 +157,8 @@ function classifyVarShorthand(colorPart) {
 
 /**
  * Peel a leading dataType typehint ("color:red", "length:200px").
- * @returns {{ typehint: string | null, value: string }}
  */
-function extractTypehint(value) {
+function extractTypehint(value: string): { typehint: string | null; value: string } {
   for (let i = 0; i < value.length; i++) {
     const ch = value[i];
     if (ch === ":") return { typehint: value.slice(0, i), value: value.slice(i + 1) };
@@ -151,10 +170,10 @@ function extractTypehint(value) {
 
 /**
  * Fallbacks recurse, so a color nested any depth is caught (var(--x, var(--y, red))).
- * @param {string} value  decoded arbitrary interior
- * @returns {"var" | "raw" | null}  "raw" if a literal-color fallback, null if not a var ref
+ * @param value  decoded arbitrary interior
+ * @returns "raw" if a literal-color fallback, null if not a var ref
  */
-function classifyVarReference(value) {
+function classifyVarReference(value: string): "var" | "raw" | null {
   if (!VAR_REF_RE.test(value) || value[value.length - 1] !== ")") return null;
   const inner = value.slice(4, -1);
   const args = segment(inner, ",");
@@ -168,9 +187,8 @@ function classifyVarReference(value) {
 /**
  * Parse a whole-base arbitrary property ("[color:red]", "[--x:red]"). Value
  * returned undecoded (classifyColorValue decodes). null if not one / malformed.
- * @returns {{ property: string, value: string } | null}
  */
-export function parseArbitraryProperty(base) {
+export function parseArbitraryProperty(base: string): ArbitraryProperty | null {
   if (base.length < 2 || base[0] !== "[" || base[base.length - 1] !== "]") return null;
   const c = base[1]; // property starts a-z or "-" (custom props lead "--")
   if (c !== "-" && !(c >= "a" && c <= "z")) return null;
@@ -183,10 +201,9 @@ export function parseArbitraryProperty(base) {
 }
 
 /**
- * @param {string} rawValue  undecoded value side of an arbitrary property ("[prop:value]")
- * @returns {"raw" | "var" | null}
+ * @param rawValue  undecoded value side of an arbitrary property ("[prop:value]")
  */
-function classifyColorValue(rawValue) {
+function classifyColorValue(rawValue: string): "raw" | "var" | null {
   const decoded = decodeArbitraryValue(rawValue);
   const { typehint, value } = extractTypehint(decoded);
   if (isNonColorTypehint(typehint)) return null;
@@ -195,27 +212,22 @@ function classifyColorValue(rawValue) {
   return isColor(value) ? "raw" : null;
 }
 
-/**
- * @param {{ colorPart: string|null, arbitraryProperty: string|null, arbitraryValue: string|null }} parts
- * @param {{ semanticSet?: Set<string>, spectralSet?: Set<string> }} tokens
- * @returns {"semantic" | "spectral" | "static" | "raw" | "var" | null}
- */
-export function classifyParts(parts, tokens) {
+export function classifyParts(
+  parts: { colorPart: string | null; arbitraryProperty: string | null; arbitraryValue: string | null },
+  tokens: Tokens,
+): ColorVerdict {
   if (parts.arbitraryProperty !== null) {
     if (!isColorProperty(parts.arbitraryProperty)) return null;
-    return classifyColorValue(parts.arbitraryValue);
+    return classifyColorValue(parts.arbitraryValue ?? "");
   }
   return classifyColorPart(parts.colorPart, tokens);
 }
 
 /**
  * Longest match wins.
- * @param {string} base
- * @param {string[]} colorPrefixes
- * @returns {string | null}
  */
-export function findColorPrefix(base, colorPrefixes) {
-  let best = null;
+export function findColorPrefix(base: string, colorPrefixes: string[]): string | null {
+  let best: string | null = null;
   for (const p of colorPrefixes) {
     if (base.startsWith(p + "-") && (best === null || p.length > best.length)) {
       best = p;
@@ -224,7 +236,12 @@ export function findColorPrefix(base, colorPrefixes) {
   return best;
 }
 
-function isDiscardedCandidate(variants, base, modifier, arbitrary) {
+function isDiscardedCandidate(
+  variants: string[],
+  base: string,
+  modifier: string | null,
+  arbitrary: ArbitraryProperty | null,
+): boolean {
   for (const v of variants) {
     if (!isValidArbitrary(v)) return true;
   }
@@ -235,7 +252,7 @@ function isDiscardedCandidate(variants, base, modifier, arbitrary) {
   return false;
 }
 
-function isValidModifier(mod) {
+function isValidModifier(mod: string): boolean {
   const first = mod[0];
   const last = mod[mod.length - 1];
   if ((first === "[" && last === "]") || (first === "(" && last === ")")) {
@@ -244,11 +261,11 @@ function isValidModifier(mod) {
   return mod.length > 0;
 }
 
-function isValidArbitraryGroup(inner) {
+function isValidArbitraryGroup(inner: string): boolean {
   return inner.trim().length > 0 && isValidArbitrary(inner);
 }
 
-function isArbitraryDiscarded(base) {
+function isArbitraryDiscarded(base: string): boolean {
   const b = base.indexOf("[");
   const p = base.indexOf("(");
   if (b === -1 && p === -1) return false;
@@ -260,12 +277,7 @@ function isArbitraryDiscarded(base) {
   return !isValidArbitraryGroup(base.slice(open + 1, -1));
 }
 
-/**
- * @param {string} rawTok
- * @param {string[]} [colorPrefixes]
- * @returns {{ variants: string[], base: string, modifier: string|null, colorPrefix: string|null, colorPart: string|null, arbitraryProperty: string|null, arbitraryValue: string|null } | null} null when rawTok is not a Candidate
- */
-export function composeColorParts(rawTok, colorPrefixes) {
+export function composeColorParts(rawTok: string, colorPrefixes?: string[]): ColorParts | null {
   const { variants, base, modifier } = splitColorToken(rawTok);
   // Parse the arbitrary-property shape once — it always leads with "[" and never
   // has a utility prefix, so both the discard check and returned parts share it.

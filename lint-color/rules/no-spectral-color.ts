@@ -2,7 +2,7 @@
 // Use a design token instead. When colors.json supplies a replacement map, the
 // message names the token to use.
 
-import { classifyParts, findSpectralMatch, composeColorParts } from "../classify.js";
+import { classifyParts, findSpectralMatch, composeColorParts } from "../classify.ts";
 
 export const id = 4;
 export const name = "no-spectral-color";

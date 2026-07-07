@@ -3,7 +3,7 @@ import { ansi, runTokenRuleOnSource, type CheckTokenFn } from "../helpers.js";
 import {
   TAILWIND_COLOR_PREFIXES,
   TAILWIND_SPECTRAL_COLORS,
-} from "../classify.js";
+} from "../classify.ts";
 
 const { checkToken } = (await import("./no-var-color.js")) as {
   checkToken: CheckTokenFn;

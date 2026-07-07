@@ -3,7 +3,7 @@
 
 import valueParser from "postcss-value-parser";
 
-import { classifyParts } from "../classify.js";
+import { classifyParts } from "../classify.ts";
 import { isColor } from "../vendor/is-color.js";
 
 export const id = 2;

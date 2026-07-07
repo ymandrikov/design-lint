@@ -1,7 +1,7 @@
 // Rule 6 — No CSS-variable reference behind a color prefix.
 // Use the token's semantic utility class (bg-primary), not a var() reference.
 
-import { classifyParts } from "../classify.js";
+import { classifyParts } from "../classify.ts";
 
 export const id = 6;
 export const name = "no-var-color";

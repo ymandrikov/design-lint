@@ -14,7 +14,7 @@ import {
   ignoredLines,
   offsetToLine,
 } from "../ast.ts";
-import { classifyColorPart, composeColorParts } from "../classify.js";
+import { classifyColorPart, composeColorParts } from "../classify.ts";
 import { findRawColor } from "./no-raw-css-color.js";
 
 // Returns true when tok applies a known semantic or spectral color via any color prefix.

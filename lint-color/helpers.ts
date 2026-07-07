@@ -1,7 +1,7 @@
 // Shared types and test helpers for lint-color rule tests.
 // scripts/ is excluded from tsconfig, so rule modules are imported via cast.
 
-import { composeColorParts } from "./classify.js";
+import { composeColorParts } from "./classify.ts";
 import {
   parseSource,
   walk,

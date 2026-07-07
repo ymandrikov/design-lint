@@ -14,7 +14,7 @@ import { getAllFiles, isStorybookFile } from "./files.js";
 import {
   TAILWIND_COLOR_PREFIXES,
   TAILWIND_SPECTRAL_COLORS,
-} from "./classify.js";
+} from "./classify.ts";
 
 import * as ruleStyleColor from "./rules/no-style-color.js";
 import * as ruleRawCssColor from "./rules/no-raw-css-color.js";

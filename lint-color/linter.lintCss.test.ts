@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ansi } from "./helpers.js";
-import { TAILWIND_COLOR_PREFIXES, TAILWIND_SPECTRAL_COLORS } from "./classify.js";
+import { TAILWIND_COLOR_PREFIXES, TAILWIND_SPECTRAL_COLORS } from "./classify.ts";
 import { createLinter } from "./linter.js";
 
 const RAW_CSS_RULE_ID = 2;

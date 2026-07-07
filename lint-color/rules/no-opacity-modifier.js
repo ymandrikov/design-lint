@@ -1,7 +1,7 @@
 // Rule 3 — No opacity modifiers on color classes (e.g. bg-destructive/5).
 // Use a dedicated token with the opacity baked in instead.
 
-import { classifyColorPart } from "../classify.js";
+import { classifyColorPart } from "../classify.ts";
 
 export const id = 3;
 export const name = "no-opacity-modifier";

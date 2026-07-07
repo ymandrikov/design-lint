@@ -11,7 +11,7 @@ import {
   ignoredLines,
   offsetToLine,
 } from "./ast.ts";
-import { composeColorParts } from "./classify.js";
+import { composeColorParts } from "./classify.ts";
 
 import * as ruleStyleColor from "./rules/no-style-color.js";
 import * as ruleRawCssColor from "./rules/no-raw-css-color.js";

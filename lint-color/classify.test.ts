@@ -13,7 +13,7 @@ import {
   splitColorToken,
   TAILWIND_COLOR_PREFIXES,
   TAILWIND_SPECTRAL_COLORS,
-} from "./classify.js";
+} from "./classify.ts";
 import { EDGE_TOKENS } from "./edge-tokens.js";
 
 describe("splitColorToken — exact output over curated edge tokens", () => {
