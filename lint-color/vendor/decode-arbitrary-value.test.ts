@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeArbitraryValue } from "./decode-arbitrary-value.js";
+import { decodeArbitraryValue } from "./decode-arbitrary-value.ts";
 
 // Ported from tailwindcss packages/tailwindcss/src/utils/decode-arbitrary-value.test.ts
 // at commit 9b0e8af (v4.3.2). Only the underscore-decoding + url()/var()/theme()

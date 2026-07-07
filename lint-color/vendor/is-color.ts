@@ -2,7 +2,7 @@
  * Vendored from tailwindcss (MIT)
  * Source: packages/tailwindcss/src/utils/is-color.ts
  * Commit: 9b0e8af25861ad5b8f5af420ad3ee0b188665027 (v4.3.2)
- * Changes: converted to plain JS (type annotations dropped); no logic changes.
+ * Changes: none to logic; kept as TypeScript, matching the upstream source.
  * See ADR 0002 — vendor Tailwind parsing primitives.
  *
  * This is the single definition of "literal color" the linter uses everywhere:
@@ -59,12 +59,12 @@ const NAMED_COLORS = new Set([
 
 const IS_COLOR_FN = /^(rgba?|hsla?|hwb|color|(ok)?(lab|lch)|light-dark|color-mix|--alpha)\(/i;
 
-export function isColor(value) {
+export function isColor(value: string): boolean {
   return (
     value.charCodeAt(0) === HASH || IS_COLOR_FN.test(value) || NAMED_COLORS.has(value.toLowerCase())
   );
 }
 
-export function isNamedColor(value) {
+export function isNamedColor(value: string): boolean {
   return NAMED_COLORS.has(value.toLowerCase());
 }

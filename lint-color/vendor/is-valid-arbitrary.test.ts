@@ -6,7 +6,7 @@
 // call sites in `candidate.ts` (arbitrary values, var shorthand, modifiers).
 // A re-vendor against a new commit that changes those semantics fails here.
 import { expect, it } from "vitest";
-import { isValidArbitrary } from "./is-valid-arbitrary.js";
+import { isValidArbitrary } from "./is-valid-arbitrary.ts";
 
 it("accepts a plain value", () => {
   expect(isValidArbitrary("red")).toBe(true);

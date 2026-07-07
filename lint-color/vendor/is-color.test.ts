@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isColor, isNamedColor } from "./is-color.js";
+import { isColor, isNamedColor } from "./is-color.ts";
 
 // Tailwind ships no is-color.test.ts at commit 9b0e8af; these cases pin the
 // behavior the classification layer relies on (ADR 0002 — a re-vendor that

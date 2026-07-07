@@ -1,7 +1,7 @@
 // Ported from tailwindcss packages/tailwindcss/src/utils/segment.test.ts
 // at commit 9b0e8af25861ad5b8f5af420ad3ee0b188665027 (parity suite per ADR 0002).
 import { expect, it } from "vitest";
-import { segment } from "./segment.js";
+import { segment } from "./segment.ts";
 
 it("should result in a single segment when the separator is not present", () => {
   expect(segment("foo", ":")).toEqual(["foo"]);

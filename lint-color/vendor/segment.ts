@@ -2,7 +2,7 @@
  * Vendored from tailwindcss (MIT)
  * Source: packages/tailwindcss/src/utils/segment.ts
  * Commit: 9b0e8af25861ad5b8f5af420ad3ee0b188665027 (v4.3.2)
- * Changes: converted to plain JS (type annotations dropped); no logic changes.
+ * Changes: none to logic; kept as TypeScript, matching the upstream source.
  * See ADR 0002 — vendor Tailwind parsing primitives.
  */
 
@@ -34,11 +34,11 @@ const closingBracketStack = new Uint8Array(256);
  *        x              x  x    ╰──────── Split because top-level
  *        ╰──────────────┴──┴───────────── Ignored b/c inside >= 1 levels of parens
  */
-export function segment(input, separator) {
+export function segment(input: string, separator: string): string[] {
   // SAFETY: We can use an index into a shared buffer because this function is
   // synchronous, non-recursive, and runs in a single-threaded environment.
   let stackPos = 0;
-  let parts = [];
+  let parts: string[] = [];
   let lastPos = 0;
   let len = input.length;
 

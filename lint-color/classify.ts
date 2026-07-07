@@ -1,7 +1,7 @@
-import { segment } from "./vendor/segment.js";
-import { isValidArbitrary } from "./vendor/is-valid-arbitrary.js";
-import { decodeArbitraryValue } from "./vendor/decode-arbitrary-value.js";
-import { isColor } from "./vendor/is-color.js";
+import { segment } from "./vendor/segment.ts";
+import { isValidArbitrary } from "./vendor/is-valid-arbitrary.ts";
+import { decodeArbitraryValue } from "./vendor/decode-arbitrary-value.ts";
+import { isColor } from "./vendor/is-color.ts";
 
 // Verdicts:
 //   "semantic" — design-token name ("primary")

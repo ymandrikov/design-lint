@@ -4,7 +4,7 @@
 import valueParser from "postcss-value-parser";
 
 import { classifyParts, type ColorParts, type Tokens } from "../classify.ts";
-import { isColor } from "../vendor/is-color.js";
+import { isColor } from "../vendor/is-color.ts";
 
 export const id = 2;
 export const name = "no-raw-css-color";

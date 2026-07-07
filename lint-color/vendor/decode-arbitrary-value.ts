@@ -17,7 +17,12 @@
 
 import valueParser from "postcss-value-parser";
 
-export function decodeArbitraryValue(input) {
+// The parser's own AST node type — a `word`/`div`/`space`/`string`/`function`/…
+// node carrying a `value` (and, for function nodes, child `nodes`). Derived from
+// postcss-value-parser's bundled declarations so the walk needs no local shape.
+type ValueNode = ReturnType<typeof valueParser>["nodes"][number];
+
+export function decodeArbitraryValue(input: string): string {
   // There are definitely no functions in the input, so bail early.
   if (input.indexOf("(") === -1) {
     return convertUnderscoresToWhitespace(input);
@@ -32,7 +37,7 @@ export function decodeArbitraryValue(input) {
  * Convert `_` to ` `, except for escaped underscores `\_` they should be
  * converted to `_` instead.
  */
-function convertUnderscoresToWhitespace(input, skipUnderscoreToSpace = false) {
+function convertUnderscoresToWhitespace(input: string, skipUnderscoreToSpace = false): string {
   let output = "";
   for (let i = 0; i < input.length; i++) {
     const char = input[i];
@@ -57,7 +62,7 @@ function convertUnderscoresToWhitespace(input, skipUnderscoreToSpace = false) {
   return output;
 }
 
-function recursivelyDecodeArbitraryValues(nodes) {
+function recursivelyDecodeArbitraryValues(nodes: ValueNode[]): void {
   for (const node of nodes) {
     switch (node.type) {
       case "function": {

@@ -2,7 +2,7 @@
  * Vendored from tailwindcss (MIT)
  * Source: packages/tailwindcss/src/utils/is-valid-arbitrary.ts
  * Commit: 9b0e8af25861ad5b8f5af420ad3ee0b188665027 (v4.3.2)
- * Changes: converted to plain JS (type annotations dropped); no logic changes.
+ * Changes: none to logic; kept as TypeScript, matching the upstream source.
  * See ADR 0002 — vendor Tailwind parsing primitives.
  */
 
@@ -32,7 +32,7 @@ const closingBracketStack = new Uint8Array(256);
  * This function is very similar to `segment` but `segment` cannot be used
  * because we'd need to split on a bracket stack character.
  */
-export function isValidArbitrary(input) {
+export function isValidArbitrary(input: string): boolean {
   // SAFETY: We can use an index into a shared buffer because this function is
   // synchronous, non-recursive, and runs in a single-threaded environment.
   let stackPos = 0;
