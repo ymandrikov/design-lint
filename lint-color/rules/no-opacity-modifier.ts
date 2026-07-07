@@ -16,13 +16,10 @@ interface Ctx {
   ansi: Ansi;
 }
 
-// checkToken(rawTok, parts, ctx) → message string or null.
-//
-// Fires on ANY Modifier — numeric (/50), arbitrary (/[0.5]), or var shorthand
-// (/(--alpha)) — but only when the base is actually a color (classifyColorPart
-// is non-null). The real-color gate kills the line-height false positive
-// (text-sm/6, text-lg/[1.4]) while the broadened Modifier detection closes the
-// arbitrary/var opacity bypass (finding #3).
+// Fires on any modifier — numeric (/50), arbitrary (/[0.5]), var shorthand
+// (/(--alpha)) — but only when the base is a real color. The color gate kills
+// the line-height false positive (text-sm/6, text-lg/[1.4]); the broad modifier
+// match closes the arbitrary/var opacity bypass (finding #3).
 export function checkToken(_rawTok: string, parts: ColorParts, ctx: Ctx): string | null {
   const { tokens, ansi } = ctx;
   const { base, modifier, colorPrefix, colorPart } = parts;

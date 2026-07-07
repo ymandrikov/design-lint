@@ -154,7 +154,6 @@ describe("linter gating — per-rule enable/disable via config", () => {
   });
 
   describe("no-undefined-token", () => {
-    // "primary-foreground" is not in semanticSet → fires
     const el = `<div className="text-primary-foreground" />`;
 
     it("catches text-primary-foreground when enabled", () => {

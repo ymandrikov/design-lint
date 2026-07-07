@@ -123,7 +123,7 @@ describe("no-spectral-color", () => {
   });
 
   describe("replacing", () => {
-    it("replaces bg-green-500 with bg-success", () => {
+    it("replaces text-green-400 with text-success-content", () => {
       const el = `<div className="text-green-400" />`;
       const result = lint(el, noSpectralColor);
       expect(result).toHaveLength(1);
@@ -131,7 +131,7 @@ describe("no-spectral-color", () => {
       expect(result[0]).toContain("text-success-content");
     });
 
-    it("replaces bg-green-500 with bg-success", () => {
+    it("replaces text-green-600 with text-success-content", () => {
       const el = `<div className="text-green-600" />`;
       const result = lint(el, noSpectralColor);
       expect(result).toHaveLength(1);
@@ -147,7 +147,7 @@ describe("no-spectral-color", () => {
       expect(result[0]).toContain("bg-success");
     });
 
-    it("replaces bg-green-500 with bg-success", () => {
+    it("flags bg-blue-500 without suggesting a spectral replacement", () => {
       const el = `<div className="bg-blue-500" />`;
       const result = lint(el, noSpectralColor);
       expect(result).toHaveLength(1);

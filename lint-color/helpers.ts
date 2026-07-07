@@ -1,5 +1,4 @@
 // Shared types and test helpers for lint-color rule tests.
-// scripts/ is excluded from tsconfig, so rule modules are imported via cast.
 
 import { composeColorParts } from "./classify.ts";
 import {
@@ -56,10 +55,8 @@ export function makeReporter() {
   return { found, report };
 }
 
-// Run a checkToken-based rule against every className/class token in a TSX
-// source string. Parses once, walks JSXAttribute[className|class] values, splits
-// their static text, and composes the pre-split parts per token, mirroring the
-// production pipeline. Returns the violation messages (strings) that fire.
+// Run a checkToken rule against every className/class token in a TSX source,
+// mirroring the production pipeline. Returns the violation messages that fire.
 export function runTokenRuleOnSource(
   checkTokenFn: CheckTokenFn,
   source: string,

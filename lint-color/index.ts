@@ -29,8 +29,6 @@ import * as ruleUndefinedToken from "./rules/no-undefined-token.ts";
 
 import { createLinter } from "./linter.ts";
 
-// ── Types ───────────────────────────────────────────────────────────────────
-
 // Shape of design-system/lint/colors.json at the JSON.parse boundary (the one
 // external-data seam). Every rule sub-config is open-ended; only the fields this
 // entrypoint reads are named. `componentsDirectory` rides under the component
@@ -109,8 +107,6 @@ async function buildIsValidTailwindCandidate(
 
 const ansi = { red, blue: (s: string) => (process.stdout.isTTY ? `\x1b[34m${s}\x1b[0m` : s), dim };
 
-// ── Config ────────────────────────────────────────────────────────────────────
-
 const config: Config = JSON.parse(
   readFileSync(join(ROOT, "design-system/lint/colors.json"), "utf-8"),
 );
@@ -154,8 +150,6 @@ const tokens = {
 
 const linter = createLinter(config.rules ?? {}, tokens, ansi);
 
-// ── Violations & ignores ──────────────────────────────────────────────────────
-
 const violations: OutViolation[] = [];
 const ignores: OutIgnore[] = [];
 
@@ -167,8 +161,6 @@ function accumulate({ violations: vs, ignores: is }: LintResult, filePath: strin
     ignores.push({ file: relative(ROOT, filePath), line: lineNum });
   }
 }
-
-// ── Run ───────────────────────────────────────────────────────────────────────
 
 for (const f of getAllFiles(SRC, ".css").filter((f) => !isStorybookFile(f))) {
   const source = readFileSync(f, "utf-8");
@@ -182,8 +174,6 @@ for (const f of getAllFiles(SRC, ".tsx", ".ts").filter((f) => !isStorybookFile(f
   accumulate(linter.lintHoverSource(source, f), f);
   accumulate(linter.lintComponentSource(source, f), f);
 }
-
-// ── Output ────────────────────────────────────────────────────────────────────
 
 const ignoreHint =
   ignores.length > 10

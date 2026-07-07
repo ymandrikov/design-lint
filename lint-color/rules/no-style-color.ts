@@ -1,6 +1,3 @@
-// Rule 1 — No color or backgroundColor in style= props.
-// Use a CSS module with a var(--color-*) token instead.
-
 import {
   parseSource,
   walk,
@@ -25,13 +22,9 @@ interface Ctx {
   ansi: Ansi;
 }
 
-// lintSource(source, filePath, ctx)
-// ctx.report(lineNum, message) called for each violation.
-//
-// Reads the style object literal from the AST, so a `{` inside a string value
-// (`style={{ content: "{" }}`) can no longer desync brace tracking (#2 / M2),
-// and only the object's own keys are inspected — a `color:` substring elsewhere
-// on the line (`title="x, color: red"`) is never a false positive (#11).
+// Reads the style object literal from the AST (not the raw line) so a `{` inside
+// a string value can't desync brace tracking (#2), and a `color:` substring
+// elsewhere on the line isn't a false positive (#11).
 export function lintSource(source: string, filePath: string, ctx: Ctx): void {
   const { report, ansi } = ctx;
   const ast = parseSource(source, filePath);

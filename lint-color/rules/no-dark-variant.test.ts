@@ -39,11 +39,9 @@ describe("no-dark-variant", () => {
       expect(result[0]).toContain("md:dark:text-muted");
     });
 
-    // v1 (Change C) scopes the general token pipeline to static className/class
-    // string and template values only. Class strings inside cn()/clsx() calls are
-    // a documented v1.1 fast-follow (callee allowlist), so they are not scanned
-    // here yet. no-component-color-override still descends into calls on watched
-    // components — this deferral only affects the general spectral/dark/etc. rules.
+    // The general token pipeline scans static className/class values only;
+    // scanning cn()/clsx() arguments is a v1.1 fast-follow. no-component-color-override
+    // still descends into calls on watched components.
     it("does not scan string arguments inside a cn() call (deferred to v1.1)", () => {
       const el = `<div className={cn("dark:text-muted", extra)} />`;
       const result = lint(el);

@@ -28,14 +28,11 @@ export type ParsedAst = {
 
 export type ClassStatic = { text: string; node: Node };
 
-// One own property of a `style={{…}}` object literal.
 export type StyleProp = { keyName: string; valueNode: Expression; node: ObjectProperty };
 
 type Lang = "tsx" | "ts";
 
-// ── Line mapping ────────────────────────────────────────────────────────────
-// oxc nodes carry byte/char offsets (Span), not 1-based lines.
-
+// oxc nodes carry byte offsets (Span), not 1-based lines.
 export function buildLineStarts(src: string): number[] {
   const starts = [0];
   for (let k = 0; k < src.length; k++) {
@@ -55,10 +52,8 @@ export function offsetToLine(lineStarts: number[], offset: number): number {
   return lo + 1;
 }
 
-// ── Parse (with LRU(1) cache) ───────────────────────────────────────────────
-// index.ts runs four rule passes over the same source; caching the last parse
-// makes that one parse per file (review §3 HOT item — deletes double tokenize).
-
+// index.ts runs four rule passes over the same source; the LRU(1) cache makes
+// that one parse per file.
 let cache: { source: string; lang: Lang; ast: ParsedAst } | null = null;
 
 // `.tsx` parses JSX; `.ts` must NOT — under tsx mode a legal plain-TS generic
@@ -82,18 +77,14 @@ export function parseSource(source: string, filePath = "file.tsx"): ParsedAst {
   return ast;
 }
 
-// ── Traversal ───────────────────────────────────────────────────────────────
 // Skips the `parent` back-reference so the walk can't cycle.
-
 export function walk(node: unknown, enter: (node: Node) => void): void {
   if (!node || typeof node !== "object") return;
   if (Array.isArray(node)) {
     for (const child of node) walk(child, enter);
     return;
   }
-  // Reflective descent over a heterogeneous AST: index the node as a bag of
-  // unknown values. The `typeof type === "string"` guard is what makes the
-  // `enter` cast to Node sound.
+  // The `typeof rec.type === "string"` guard is what makes the cast to Node sound.
   const rec = node as Record<string, unknown>;
   if (typeof rec.type === "string") enter(node as Node);
   for (const key in rec) {
@@ -119,13 +110,10 @@ export function jsxName(node: JSXElementName | null | undefined): string {
   }
 }
 
-// ── Suppression ──────────────────────────────────────────────────────────────
-// Lines a `color-lint-ignore` comment suppresses. Only the exact marker word in
-// a *comment* counts — a className like "color-lint-ignore-panel" no longer
-// suppresses anything (fixes #18 superstring match). Suppression is scoped to
-// the physical line the marker sits on (matching the old per-line semantics), so
-// a multi-line comment that merely mentions the word can't swallow other lines.
-// Memoized on the shared cached AST so the four rule passes compute it once.
+// Only the exact marker word in a *comment* suppresses — a className like
+// "color-lint-ignore-panel" no longer counts (fixes #18 superstring match).
+// Suppression is scoped to the physical line the marker sits on, so a multi-line
+// comment that merely mentions the word can't swallow other lines.
 const IGNORE_MARKER = /color-lint-ignore(?![-\w])/;
 const COMMENT_DELIM_LEN = 2; // `//` or `/*` — comment.value excludes the opener
 
@@ -141,8 +129,6 @@ export function ignoredLines(ast: ParsedAst): Set<number> {
   ast.ignored = lines;
   return lines;
 }
-
-// ── className extraction ─────────────────────────────────────────────────────
 
 // Static class strings carried by a className/class attribute value, each with
 // the node whose offset locates it. v1 scans a plain string literal and a
@@ -191,8 +177,6 @@ export function classNameStaticsDeep(value: unknown): ClassStatic[] {
   });
   return out;
 }
-
-// ── style={{…}} extraction ───────────────────────────────────────────────────
 
 // Own properties of a style object literal, as { keyName, valueNode, node }.
 // Detected via the object AST, not brace counting, so a `{` inside a string

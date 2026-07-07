@@ -137,8 +137,8 @@ describe("no-raw-css-color", () => {
     });
 
     it("does not scan style attribute values via the token pipeline", () => {
-      // v1 (Change C): the token pipeline scans className/class only. A raw color
-      // in a style prop is caught by no-style-color / no-component-color-override.
+      // The token pipeline scans className/class only; a raw color in a style prop
+      // is caught by no-style-color / no-component-color-override.
       expect(lint(`<div style={{ backgroundColor: "#f00" }} />`)).toHaveLength(0);
     });
   });

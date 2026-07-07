@@ -1,7 +1,5 @@
-// Rule 12 — Color class does not resolve to any CSS in this project.
-// Requires tokens.isValidTailwindCandidate (loaded from the Tailwind design system
-// in index.ts). No-op when the function is absent so rule-specific tests that
-// don't provide the Tailwind API are not affected.
+// Requires tokens.isValidTailwindCandidate (from the Tailwind design system).
+// No-op when absent so rule-specific tests without the Tailwind API aren't affected.
 
 import type { ColorParts } from "../classify.ts";
 
@@ -18,7 +16,6 @@ interface Ctx {
   ansi: Ansi;
 }
 
-// checkToken(rawTok, parts, ctx) → message string or null.
 export function checkToken(_rawTok: string, parts: ColorParts, ctx: Ctx): string | null {
   const { tokens, ansi } = ctx;
   const { isValidTailwindCandidate } = tokens;
@@ -26,8 +23,7 @@ export function checkToken(_rawTok: string, parts: ColorParts, ctx: Ctx): string
 
   if (!isValidTailwindCandidate) return null;
   if (!colorPrefix) return null;
-  // colorPrefix set ⇒ colorPart is a string (possibly ""); the null branch is
-  // unreachable at runtime and only guards the type.
+  // colorPrefix set ⇒ colorPart is a non-null string; this only guards the type.
   if (colorPart === null) return null;
   if (colorPart.startsWith("[")) return null;
 

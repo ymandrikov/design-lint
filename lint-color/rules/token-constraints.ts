@@ -1,10 +1,7 @@
-// Rule 5 — token-constraints: color class violates an allow/deny constraint.
-// Config lives in colors.json → rules["token-constraints"].allowed / .denied.
-// Keys are color prefixes (text, border, …) plus the special "hover:" variant.
-// "*" is the fallback for any prefix not explicitly listed.
-//
-// hover: handling is folded in here: when rawTok has "hover:", the color part
-// must additionally satisfy allowed["hover:"] (if that key is present).
+// Config: colors.json → rules["token-constraints"].allowed / .denied. Keys are
+// color prefixes (text, border, …) plus a special "hover:" variant; "*" is the
+// fallback for any prefix not listed. When rawTok has "hover:", colorPart must
+// additionally satisfy allowed["hover:"] if that key is present.
 
 import type { ColorParts, Tokens } from "../classify.ts";
 
@@ -16,7 +13,7 @@ interface Ansi {
   blue(s: string): string;
 }
 
-// Prefix → allowed/denied pattern lists (see the pattern syntax below).
+// Prefix → allowed/denied pattern lists.
 type PatternMap = Record<string, string[]>;
 
 interface Ctx {
@@ -33,21 +30,19 @@ function matchPattern(value: string, pattern: string): boolean {
   return value === pattern;
 }
 
-// checkToken(rawTok, parts, ctx) → message string or null.
 export function checkToken(rawTok: string, parts: ColorParts, ctx: Ctx): string | null {
   const { tokens, ansi, ruleConfig } = ctx;
   const { semanticSet } = tokens;
   const { base, colorPrefix, colorPart, variants } = parts;
 
   if (!colorPrefix) return null;
-  // colorPrefix set ⇒ colorPart is a string; the null branch only guards the type.
+  // colorPrefix set ⇒ colorPart is a non-null string; this only guards the type.
   if (colorPart === null) return null;
   if (!semanticSet?.has(colorPart)) return null;
 
   const { allowed = {}, denied = {} } = ruleConfig ?? {};
 
   if (colorPrefix in allowed) {
-    // Prefix has an explicit allow list — token must match at least one pattern.
     const allowList = allowed[colorPrefix];
     if (!allowList.some((p) => matchPattern(colorPart, p))) {
       const firstSuffix = allowList.find((p) => p.startsWith("*-"));
@@ -57,7 +52,6 @@ export function checkToken(rawTok: string, parts: ColorParts, ctx: Ctx): string 
       return `${ansi.red(base)} — ${ansi.red(colorPart)} not allowed for ${ansi.blue(colorPrefix + "-")} (allowed: ${allowList.join(", ")})${hint}`;
     }
   } else {
-    // No prefix-specific rule — check the deny list (prefix-specific or fallback "*").
     const denyList = denied[colorPrefix] ?? denied["*"];
     if (denyList?.length) {
       const match = denyList.find((p) => matchPattern(colorPart, p));
@@ -67,11 +61,9 @@ export function checkToken(rawTok: string, parts: ColorParts, ctx: Ctx): string 
     }
   }
 
-  // hover: variant — color part must match allowed["hover:"] when present.
-  // Driven by the parsed Tailwind variants: "hover" itself plus any "-hover"
-  // compound (group-hover, peer-hover, …), matching what the old substring
-  // sniff caught — while a "hover:" buried in a bracket group (e.g.
-  // "[@media(hover:hover)]:…") is NOT mistaken for a hover variant.
+  // Match parsed Tailwind variants ("hover" or any "-hover" compound like
+  // group-hover), not a raw substring, so a "hover:" inside a bracket group
+  // ("[@media(hover:hover)]:…") isn't mistaken for a hover variant.
   if (variants.some((v) => v === "hover" || v.endsWith("-hover"))) {
     const hoverAllow = allowed["hover:"];
     if (hoverAllow?.length && !hoverAllow.some((p) => matchPattern(colorPart, p))) {

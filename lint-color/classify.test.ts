@@ -105,9 +105,7 @@ describe("classifyColorPart", () => {
   });
 
   it("does not misread a bracketed interior with a spectral-looking run as spectral", () => {
-    // A var reference (starts with `--`) is a var, not spectral.
     expect(classifyColorPart("(--red-500-rgb)", tokens)).toBe("var");
-    // `[--red-500-rgb]` is neither a var(...) reference nor a literal color.
     expect(classifyColorPart("[--red-500-rgb]", tokens)).toBeNull();
   });
 
@@ -171,7 +169,6 @@ describe("composeColorParts — discarded strings return null", () => {
   });
 
   it("keeps registry-free candidates (root existence is not checked)", () => {
-    // `bogus` is not a real utility root, but the string is syntactically valid.
     expect(parts("bogus-[#123]")).not.toBeNull();
     expect(parts("bg-[url('a:b.png')]")).not.toBeNull();
     expect(parts("bg-(--my-color)")).not.toBeNull();

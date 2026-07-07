@@ -16,8 +16,7 @@ interface Ctx {
   ansi: Ansi;
 }
 
-// checkToken(rawTok, parts, ctx) → message string or null.
-// Keys off the raw token only — no color decomposition needed.
+// Keys off the raw token only, so the decomposed parts go unused.
 export function checkToken(rawTok: string, _parts: ColorParts, ctx: Ctx): string | null {
   const { ansi } = ctx;
   if (/(?:^|:)dark:/.test(rawTok)) {

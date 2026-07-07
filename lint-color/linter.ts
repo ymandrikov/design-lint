@@ -24,8 +24,6 @@ import * as ruleHoverInteractive from "./rules/no-useless-hover.ts";
 import * as ruleUiColorOverride from "./rules/no-component-color-override.ts";
 import * as ruleUndefinedToken from "./rules/no-undefined-token.ts";
 
-// ── Types ───────────────────────────────────────────────────────────────────
-
 type Ansi = { red: (s: string) => string; blue: (s: string) => string };
 type ReportFn = (line: number, message: string) => void;
 
@@ -73,8 +71,6 @@ type Violation = { line: number; message: string; ruleId: number };
 type RuleViolation = { message: string; ruleId: number };
 type LintResult = { violations: Violation[]; ignores: number[] };
 
-// ── Dispatch helpers ──────────────────────────────────────────────────────────
-
 function buildDisabledRules(rules: LinterConfig): Set<string> {
   return new Set(
     Object.entries(rules)
@@ -83,7 +79,6 @@ function buildDisabledRules(rules: LinterConfig): Set<string> {
   );
 }
 
-// Run a lintSource-based rule against an in-memory source string.
 function lintSourceIfEnabled(
   disabledRules: Set<string>,
   ruleModule: LintSourceRule,
@@ -103,7 +98,6 @@ function lintSourceIfEnabled(
   return found;
 }
 
-// Run a checkToken-based rule against a single token's pre-split parts.
 function checkTokenIfEnabled(
   disabledRules: Set<string>,
   ruleModule: CheckTokenRule,
@@ -120,7 +114,6 @@ function checkTokenIfEnabled(
   return ruleModule.checkToken(rawTok, parts, ctx);
 }
 
-// Run a checkValue-based rule against a single CSS declaration value.
 function checkValueIfEnabled(
   disabledRules: Set<string>,
   ruleModule: CheckValueRule,

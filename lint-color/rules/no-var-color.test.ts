@@ -40,7 +40,6 @@ describe("no-var-color", () => {
     });
 
     it("preserves an underscore in a var name (bg-[var(--my_var)])", () => {
-      // Clean var reference — a var verdict, so no-var-color fires.
       expect(lint(`<div className="bg-[var(--my_var)]" />`)).toHaveLength(1);
     });
 

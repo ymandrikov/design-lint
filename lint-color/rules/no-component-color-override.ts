@@ -33,15 +33,9 @@ interface Ctx {
   ansi: Ansi;
 }
 
-// Returns true when tok applies a known semantic or spectral color via any color prefix.
-// text-sm / text-center / shadow-md → false (not a color token).
-// The "is this a color?" test delegates to classifyColorPart, so a spectral name
-// without a numeric shade ("bg-red-foo") is not treated as a color (finding #9).
-//
-// Template-literal fragments are the exception: the color prefix alone is
-// evidence a color is being applied, so an empty color part ("bg-" from
-// `bg-${color}`) or a spectral-prefixed trailing dash ("bg-red-" from
-// `bg-red-${shade}`) still counts.
+// The color test delegates to classifyColorPart, so a spectral name without a
+// numeric shade ("bg-red-foo") is not a color (finding #9). Template-literal
+// fragments are the exception — see the inline cases below.
 function isColorToken(tok: string, tokens: OverrideTokens): boolean {
   const parts = composeColorParts(tok, tokens.colorPrefixes);
   if (parts === null) return false; // not a Candidate — Tailwind discards it
@@ -59,9 +53,6 @@ function isColorToken(tok: string, tokens: OverrideTokens): boolean {
   return false;
 }
 
-// lintSource(source, filePath, ctx)
-// ctx.report(lineNum, message) called for each violation.
-// ctx.tokens.uiComponents: Set<string> of component names from colors.json.
 export function lintSource(source: string, filePath: string, ctx: Ctx): void {
   const { report, tokens, ansi } = ctx;
   const { uiComponents } = tokens;

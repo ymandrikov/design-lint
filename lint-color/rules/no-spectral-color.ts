@@ -60,9 +60,8 @@ function findReplacement(
   return null;
 }
 
-// Fires on the classifier's "spectral" verdict, mirroring no-var-color / no-raw-css-color.
-// The hint's name+shade come from the same shared scan (findSpectralMatch), so the rule
-// keeps no private detection loop of its own.
+// The hint's name+shade come from the same shared findSpectralMatch scan, so the
+// rule keeps no private detection loop of its own.
 export function checkToken(rawTok: string, parts: Parts, ctx: Ctx): string | null {
   const { tokens, ansi, ruleConfig } = ctx;
   if (classifyParts(parts, tokens) !== "spectral") return null;

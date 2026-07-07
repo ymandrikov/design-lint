@@ -9,8 +9,8 @@ const { checkToken } = (await import("./no-opacity-modifier.js")) as {
 const colorPrefixes = ["bg", "text", "border", "ring"];
 const tokens = {
   colorPrefixes,
-  // The rule now gates on classifyColorPart, so it needs the token vocabulary
-  // to decide whether the base is actually a color.
+  // The rule gates on classifyColorPart, so it needs the token vocabulary to
+  // decide whether the base is actually a color.
   semanticSet: new Set(["primary", "foreground", "input"]),
   spectralSet: new Set(["red", "green", "blue"]),
 };
@@ -139,7 +139,6 @@ describe("no-opacity-modifier", () => {
       expect(result).toHaveLength(0);
     });
 
-    // A trailing-slash typo has an empty Modifier, not a real one — don't fire.
     it("allows bg-primary/ (trailing slash, empty Modifier)", () => {
       const el = `<div className="bg-primary/" />`;
       const result = lint(el);

@@ -14,12 +14,11 @@ interface Ansi {
   blue(s: string): string;
 }
 
-// checkToken(rawTok, parts, ctx) → message string or null.
 // Flags a literal color hiding in a Tailwind arbitrary value (bg-[#ff0000],
 // bg-[red], text-[color:red], bg-[var(--x,red)]) or an arbitrary-property
-// candidate ([color:red], [background-color:#123], [--my-color:red]). It
-// consumes the shared classification (verdict "raw") instead of re-scanning the
-// token — one definition of "literal color" for classes and CSS declarations.
+// candidate ([color:red], [--my-color:red]). Consumes the shared "raw" verdict
+// rather than re-scanning — one definition of "literal color" for classes and
+// CSS declarations.
 export function checkToken(
   rawTok: string,
   parts: ColorParts,
@@ -30,12 +29,9 @@ export function checkToken(
   return `${ansi.red(rawTok)} — raw color in arbitrary value; use a ${ansi.blue("var(--color-*)")} token`;
 }
 
-// findRawColor(value) → matched color string or null.
-// Inspects a CSS declaration / style-object value via postcss-value-parser so
-// color detection never sees selectors or at-rule preludes. url(...) references
-// are skipped — a `#id` fragment inside url() is not a color (finding #8). Every
-// other token is checked against the shared is-color, so named colors (`red`)
-// are flagged like hex and color functions. Returns the first raw color found.
+// Parses via postcss-value-parser so detection never sees selectors or at-rule
+// preludes. url(...) references are skipped — a `#id` fragment inside url() is
+// not a color (finding #8). Returns the first raw color found, or null.
 export function findRawColor(value: string): string | null {
   let found: string | null = null;
   valueParser(value).walk((node) => {
@@ -56,7 +52,6 @@ export function findRawColor(value: string): string | null {
   return found;
 }
 
-// checkValue(value, ctx) → message string or null.
 // The caller owns the declaration node, ignore detection, and line numbers.
 export function checkValue(value: string, ctx: { ansi: Ansi }): string | null {
   const { ansi } = ctx;

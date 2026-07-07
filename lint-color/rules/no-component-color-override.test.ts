@@ -99,7 +99,7 @@ describe("no-component-color-override", () => {
     });
 
     it("reports bg-red- prefix in template literal (dynamic spectral shade)", () => {
-      // `bg-red-${shade}` — static part "bg-red-" still identifies a spectral color
+      // static "bg-red-" identifies a spectral color even with a dynamic shade
       const el = `<Button className={\`bg-red-\${shade}\`} />`;
       const result = lint(el);
       expect(result).toHaveLength(1);
@@ -145,7 +145,6 @@ describe("no-component-color-override", () => {
     });
 
     it("allows template literal with no color prefix (e.g. red-${500} is not valid Tailwind)", () => {
-      // `red-${500}` has no color prefix — the correct form would be `bg-red-${shade}`
       const el = `<Button className={\`red-\${500}\`} />`;
       const result = lint(el);
       expect(result).toHaveLength(0);

@@ -1,4 +1,3 @@
-// Rule 10 — hover: on non-interactive elements.
 // hover: feedback is only meaningful on elements the user can interact with.
 
 import {
@@ -27,9 +26,7 @@ interface Ctx {
   ruleConfig?: { interactiveElements?: string[] };
 }
 
-// Elements and components that are inherently interactive (hover feedback is valid).
 const INTERACTIVE_TAGS = new Set<string>([
-  // HTML
   "a",
   "button",
   "input",
@@ -37,7 +34,6 @@ const INTERACTIVE_TAGS = new Set<string>([
   "textarea",
   "label",
   "summary",
-  // shadcn / Radix interactive components
   "Button",
   "Link",
   "NavLink",
@@ -68,10 +64,10 @@ const INTERACTIVE_TAGS = new Set<string>([
   "PaginationLink",
 ]);
 
-// Table rows: hover highlight is an intentional row-level affordance.
+// hover highlight on table rows is an intentional row-level affordance.
 const TABLE_ROW_TAGS = new Set<string>(["TableRow", "tr"]);
 
-// Props whose presence marks an element as interactive (value irrelevant).
+// Presence marks the element interactive; the attribute value is irrelevant.
 const INTERACTION_PROPS = new Set<string>([
   "onClick",
   "onPress",
@@ -97,8 +93,7 @@ const INTERACTIVE_ROLES = new Set<string>([
   "treeitem",
 ]);
 
-// Static string value of a JSX attribute, or null when it isn't a plain string.
-// Covers role="button" and role={"button"} and role={`button`} (fixes #10).
+// Handles role="button", role={"button"} and role={`button`} (#10).
 function attrStringValue(attr: JSXAttribute): string | null {
   const v = attr.value;
   if (!v) return null; // boolean attribute (e.g. `disabled`)
@@ -140,8 +135,6 @@ function elementIsInteractive(
   return false;
 }
 
-// lintSource(source, filePath, ctx)
-// ctx.report(lineNum, message) called for each violation.
 export function lintSource(source: string, filePath: string, ctx: Ctx): void {
   const { report, ansi, ruleConfig } = ctx;
   const extraInteractiveTags = new Set<string>(ruleConfig?.interactiveElements ?? []);
@@ -152,8 +145,8 @@ export function lintSource(source: string, filePath: string, ctx: Ctx): void {
     if (node.type !== "JSXOpeningElement") return;
     const tagName = jsxName(node.name);
 
-    // Locate a hover: token in any static className/class value (backtick
-    // template values now reach here too — fixes #4).
+    // Find a hover: token in any static className/class value, including backtick
+    // template values (#4).
     let hoverNode: Node | null = null;
     for (const attr of node.attributes) {
       if (attr.type !== "JSXAttribute") continue;
