@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@herb-tools/node-wasm':
+        specifier: 0.10.1
+        version: 0.10.1
       '@types/node':
         specifier: ^26.1.0
         version: 26.1.0
@@ -197,6 +200,12 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@herb-tools/core@0.10.1':
+    resolution: {integrity: sha512-zFVhWGvqC7b5KHtp4LNlCt4ExLInuRZJxvcNp9kcHCAwnVux+EiXnJz8rsiiF8pU1z2gjq3w6q/g7ayjOetpAg==}
+
+  '@herb-tools/node-wasm@0.10.1':
+    resolution: {integrity: sha512-dKMpscMLdBEgJnPmkBVT0iEkjssgjOUsJCpKWi2HMqZEsIem4NR9j3v7D5aq8cR5W80y/7dvNmHtefAsLt8KSA==}
 
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
@@ -823,6 +832,12 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.1':
     optional: true
+
+  '@herb-tools/core@0.10.1': {}
+
+  '@herb-tools/node-wasm@0.10.1':
+    dependencies:
+      '@herb-tools/core': 0.10.1
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
 

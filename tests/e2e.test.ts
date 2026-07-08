@@ -87,4 +87,51 @@ describe("CLI against fixtures/demo-app", () => {
     expect(result.stdout).not.toContain("text-link");
     expect(result.stdout).not.toContain("border-border");
   });
+
+  // T007 — non-regression (SC-004, FR-009): the ERB path is additive. The demo
+  // run scans no .erb files, so its output is unchanged by the feature. Every
+  // exact count asserted above (23 total, per-rule counts) is the guard — a
+  // regression from the ERB wiring would break one of them.
+  it("demo output is unaffected by the ERB path (byte-stable total)", () => {
+    expect(result.stdout).toContain("23 violations found.");
+    expect(result.stdout).not.toContain(".erb");
+  });
+});
+
+describe("CLI against fixtures/erb-app", () => {
+  const result = runCli(join(ROOT, "fixtures/erb-app"));
+
+  it("exits 1 when ERB violations are found", () => {
+    expect(result.status).toBe(1);
+  });
+
+  // T006 — exact ERB violations appear in one combined run alongside the .tsx file.
+  it("reports each ERB and mixed .tsx spectral violation exactly once", () => {
+    const out = result.stdout;
+    expect(out).toContain("No spectral (palette) Tailwind color classes. Use semantic tokens instead (6)");
+    // static + interpolation (static token only) + malformed (recovered) + valid sibling + ERB parity file
+    expect(out).toContain("src/static.html.erb:1  text-red-500");
+    expect(out).toContain("src/interpolation.html.erb:1  text-red-500");
+    expect(out).toContain("src/malformed.html.erb:1  text-red-500");
+    expect(out).toContain("src/valid-sibling.html.erb:1  text-red-500");
+    expect(out).toContain("src/parity/box.html.erb:1  text-red-500");
+    // parity: the .tsx twin of box.html.erb, same rule + message, same run
+    expect(out).toContain("src/parity/box.tsx:1  text-red-500");
+    expect(out).toContain("6 violations found.");
+  });
+
+  it("suppresses the color-lint-ignore line and never reports the split/dynamic tokens", () => {
+    const out = result.stdout;
+    expect(out).toContain("(1 line suppressed with color-lint-ignore)");
+    expect(out).not.toContain("suppressed.html.erb");
+    // no partial-token fragments from text-<%= shade %>-500
+    expect(out).not.toContain("text--500");
+    expect(out).not.toMatch(/text-\s/);
+    // semantic token stays clean
+    expect(out).not.toContain("text-primary");
+  });
+
+  it("surfaces the malformed-template parse note without aborting the run", () => {
+    expect(result.stderr).toContain("malformed.html.erb: ERB parse note");
+  });
 });

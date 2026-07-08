@@ -15,6 +15,7 @@
     "lint:demo": "node lint-color/index.ts fixtures/demo-app"
   },
   "dependencies": {
+    "@herb-tools/node-wasm": "0.10.1",
     "@types/node": "^26.1.0",
     "oxc-parser": "^0.138.0",
     "postcss": "^8.5.16",

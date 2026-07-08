@@ -28,6 +28,7 @@ import * as ruleUiColorOverride from "./rules/no-component-color-override.ts";
 import * as ruleUndefinedToken from "./rules/no-undefined-token.ts";
 
 import { createLinter } from "./linter.ts";
+import { loadHerb } from "./ast-erb.ts";
 
 // Shape of design-system/lint/colors.json at the JSON.parse boundary (the one
 // external-data seam). Every rule sub-config is open-ended; only the fields this
@@ -173,6 +174,14 @@ for (const f of getAllFiles(SRC, ".tsx", ".ts").filter((f) => !isStorybookFile(f
   accumulate(linter.lintTailwindSource(source, f), f);
   accumulate(linter.lintHoverSource(source, f), f);
   accumulate(linter.lintComponentSource(source, f), f);
+}
+
+// One-time herb WASM init before any .erb parse; Herb.parse is sync thereafter.
+// A single `.erb` glob covers `.html.erb` too — extname("x.html.erb") === ".erb".
+await loadHerb();
+for (const f of getAllFiles(SRC, ".erb").filter((f) => !isStorybookFile(f))) {
+  const source = readFileSync(f, "utf-8");
+  accumulate(linter.lintErbSource(source, f), f);
 }
 
 const ignoreHint =

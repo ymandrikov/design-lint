@@ -1,1 +1,3 @@
-{"feature_directory": "specs/011-migrate-vendor-ts"}
+{
+  "feature_directory": "specs/012-wire-ruby-parser"
+}

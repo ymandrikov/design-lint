@@ -64,6 +64,14 @@ Config-defined allow/deny patterns restricting which semantic tokens may appear 
 The host project being linted — a directory with `src/` and a lint config. The linter runs against a target; it does not live inside it.
 _Avoid_: host app, root
 
+**ERB template**:
+A Ruby `.erb`/`.html.erb` source file. Color rules inspect only its static HTML `class` attributes, via the herb parser; `style=` and component-shaped rules do not apply. A malformed template surfaces a parse note and still lints its recovered content — it never aborts the run.
+_Avoid_: Rails view, HTML file
+
+**Interpolation boundary**:
+An ERB hole (`<%= %>`) or control-flow tag (`<% %>`) inside a `class` value. Only whitespace-complete static class tokens are linted; any token touching interpolation is skipped whole, so no partial-token (`text-`, `-500`) is ever reported.
+_Avoid_: dynamic class (as a violation name), template hole
+
 ### Components
 
 **Protected component**:

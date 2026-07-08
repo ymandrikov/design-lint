@@ -11,6 +11,12 @@ import {
   ignoredLines,
   offsetToLine,
 } from "./ast.ts";
+import {
+  parseErb,
+  collectErbClassTokens,
+  collectErbIgnoredLines,
+  erbParseErrors,
+} from "./ast-erb.ts";
 import { composeColorParts, type ColorParts } from "./classify.ts";
 
 import * as ruleStyleColor from "./rules/no-style-color.ts";
@@ -195,6 +201,33 @@ export function createLinter(config: LinterConfig, tokens: Tokens, ansi: Ansi) {
           }
         }
       });
+
+      const ignores = [...ignore].sort((a, b) => a - b);
+      return { violations, ignores };
+    },
+
+    // Walks ERB/HTML `class` attributes and runs the same token pipeline on each
+    // fully-static class token. herb loaded once at startup (loadHerb) — this
+    // stays sync like its siblings. ERB interpolation is a token boundary
+    // (collectErbClassTokens skips any mixed group), suppression mirrors the JSX
+    // path, and a malformed template surfaces a parse note without aborting.
+    lintErbSource(source: string, filePath?: string): LintResult {
+      const result = parseErb(source);
+      const ignore = collectErbIgnoredLines(result);
+      const violations: Violation[] = [];
+
+      for (const token of collectErbClassTokens(result)) {
+        if (ignore.has(token.line)) continue;
+        violations.push(...checkTailwindClasses(token.text, token.line));
+      }
+
+      // FR-006/D4: never abort the run — surface parse errors as a note and
+      // still return whatever the recovered tree yielded.
+      const errors = erbParseErrors(result);
+      if (errors.length > 0) {
+        const where = filePath ? `${filePath}: ` : "";
+        console.warn(`${where}ERB parse note — ${errors.length} parse error(s); linting recovered content only.`);
+      }
 
       const ignores = [...ignore].sort((a, b) => a - b);
       return { violations, ignores };
