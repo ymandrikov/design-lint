@@ -1,0 +1,9 @@
+<%# US2 — genuine color references. Each resolves to a color property (or to
+    nothing, for the typo), so the filter keeps it and the color rules judge it
+    exactly as before this feature. %>
+<div class="text-red-500">spectral palette color</div>
+<div class="bg-accent/50">opacity modifier on a color token</div>
+<div class="bg-black">default-palette color, not a semantic token</div>
+<div class="text-danger">semantic color forbidden behind text-</div>
+<div class="text-accnt">typo — resolves to nothing, still flagged</div>
+<div class="text-base">--color-base shadows the font size (research D3)</div>

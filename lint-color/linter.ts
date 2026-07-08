@@ -17,7 +17,7 @@ import {
   collectErbIgnoredLines,
   erbParseErrors,
 } from "./ast-erb.ts";
-import { composeColorParts, type ColorParts } from "./classify.ts";
+import { composeColorParts, type ColorParts, type NamespaceKind } from "./classify.ts";
 
 import * as ruleStyleColor from "./rules/no-style-color.ts";
 import * as ruleRawCssColor from "./rules/no-raw-css-color.ts";
@@ -43,6 +43,7 @@ type Tokens = {
   colorPrefixes?: string[];
   uiComponents?: Set<string>;
   isValidTailwindCandidate?: ((tok: string) => boolean) | null;
+  resolveNamespaceKind?: ((base: string) => NamespaceKind) | null;
 };
 
 type RuleConfig = { enabled?: boolean; [key: string]: unknown };
@@ -140,6 +141,19 @@ export function createLinter(config: LinterConfig, tokens: Tokens, ansi: Ansi) {
     const parts = composeColorParts(rawTok, tokens.colorPrefixes);
     // Not a Candidate — Tailwind would discard this string, so no rule runs.
     if (parts === null) return found;
+
+    // Non-color filter (FR-002/003): a candidate behind a color prefix whose
+    // value resolves to a non-color CSS property (text-sm, shadow-lg, border-2)
+    // is not a color reference — drop it before any color rule runs. One seam,
+    // all rules. Null-safe: an absent resolver (unit tests without the Tailwind
+    // API) makes this a no-op, mirroring the isValidTailwindCandidate pattern.
+    if (
+      parts.colorPrefix !== null &&
+      tokens.resolveNamespaceKind &&
+      tokens.resolveNamespaceKind(parts.base) === "non-color"
+    ) {
+      return found;
+    }
 
     const darkMsg = checkTokenIfEnabled(disabledRules, ruleDarkModifier, rawTok, parts, tokens, ansi, config[ruleDarkModifier.name]);
     if (darkMsg) found.push({ message: darkMsg, ruleId: ruleDarkModifier.id });

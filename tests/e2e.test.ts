@@ -1,5 +1,7 @@
 // End-to-end: run the CLI against fixtures/demo-app and assert on real output.
 import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -11,6 +13,19 @@ function runCli(target: string) {
     cwd: ROOT,
     encoding: "utf-8",
   });
+}
+
+// A throwaway target carrying only a colors.json with the given (possibly
+// malformed) sourceDirectories value. Validation runs before any scan, so these
+// cases never reach the Tailwind loader — no token CSS or source files needed.
+function tempTargetWithSourceDirs(sourceDirectories: unknown): string {
+  const dir = mkdtempSync(join(tmpdir(), "srcdirs-"));
+  mkdirSync(join(dir, "design-system/lint"), { recursive: true });
+  writeFileSync(
+    join(dir, "design-system/lint/colors.json"),
+    JSON.stringify({ colorTokenFiles: ["tokens.css"], sourceDirectories, rules: {} }),
+  );
+  return dir;
 }
 
 describe("CLI against fixtures/demo-app", () => {
@@ -133,5 +148,131 @@ describe("CLI against fixtures/erb-app", () => {
 
   it("surfaces the malformed-template parse note without aborting the run", () => {
     expect(result.stderr).toContain("malformed.html.erb: ERB parse note");
+  });
+});
+
+// T007 (US1, SC-001) — a target whose source lives under app/ (no src/) lints
+// via sourceDirectories:["app"], reporting the violation root-relative, exit 1.
+describe("CLI against fixtures/rails-app (source under app/, no src/)", () => {
+  const result = runCli(join(ROOT, "fixtures/rails-app"));
+
+  it("lints the app/ tree without requiring src/, exit 1", () => {
+    expect(result.status).toBe(1);
+    // Path is relative to the target root, not the source directory.
+    expect(result.stdout).toContain("app/views/home.html.erb:1  text-red-500");
+    expect(result.stdout).toContain("1 violation found.");
+    // The default src/ is fully replaced — its absence is not an error.
+    expect(result.stderr).not.toContain("src");
+  });
+});
+
+// T008 (US1, SC-004, FR-006/007/008) — misconfiguration always fails loud and
+// exits non-zero, never a silent clean pass or a crash.
+describe("CLI misconfiguration handling", () => {
+  it("names a missing dir, still lints the existing sibling, exits non-zero", () => {
+    // rails-app-missing configures ["app","ghost"]; app/ exists, ghost does not.
+    const result = runCli(join(ROOT, "fixtures/rails-app-missing"));
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("ghost");
+    // The existing sibling still lints in the same run.
+    expect(result.stdout).toContain("app/views/home.html.erb:1  text-red-500");
+  });
+
+  const cases: { name: string; value: unknown; needle: RegExp }[] = [
+    { name: "empty list", value: [], needle: /empty/i },
+    { name: "absolute path", value: ["/etc"], needle: /relative/i },
+    { name: "..-escaping path", value: ["../secrets"], needle: /escape/i },
+    { name: "non-array value", value: "app", needle: /list/i },
+    { name: "non-string entry", value: ["app", 3], needle: /string/i },
+  ];
+
+  for (const { name, value, needle } of cases) {
+    it(`rejects ${name}: actionable message on stderr, non-zero exit, no crash`, () => {
+      const result = runCli(tempTargetWithSourceDirs(value));
+      expect(result.status).toBe(1);
+      expect(result.stderr).toMatch(needle);
+      // Never a clean pass, never a thrown stack trace.
+      expect(result.stdout).not.toContain("No color lint violations found");
+      expect(result.stderr).not.toContain("    at ");
+    });
+  }
+});
+
+// Feature 014 — namespace-aware color classification. One mixed corpus proves
+// the three properties: non-color utilities are silent (US1), every genuine
+// color finding survives byte-for-byte (US2), and a novel scale value needs no
+// code change (US3). Exact counts + messages are the contract (SC-005, FR-009).
+describe("CLI against fixtures/mixed-namespaces (namespace-aware classification)", () => {
+  const result = runCli(join(ROOT, "fixtures/mixed-namespaces"));
+
+  it("exits 1 — genuine color violations remain", () => {
+    expect(result.status).toBe(1);
+  });
+
+  // T012 (US1, SC-001) — non-color utilities produce zero violations. Each of
+  // these would otherwise be flagged by no-undefined-token (the color-only
+  // oracle rejects them); the filter drops them before any color rule runs.
+  it("US1 — no violation for any non-color utility", () => {
+    const out = result.stdout;
+    for (const cls of [
+      "text-sm", "text-xs", "text-lg", "text-xl",
+      "shadow-lg", "border-2", "ring-2", "outline-2", "divide-y-2",
+    ]) {
+      expect(out).not.toContain(cls);
+    }
+  });
+
+  // T015 (US2, SC-002) — every genuine color finding is preserved with its
+  // unchanged message and count.
+  it("US2 — spectral: text-red-500 still flagged", () => {
+    expect(result.stdout).toContain("No spectral (palette) Tailwind color classes. Use semantic tokens instead (1)");
+    expect(result.stdout).toContain("text-red-500 — spectral color class");
+  });
+
+  it("US2 — opacity: bg-accent/50 still flagged", () => {
+    expect(result.stdout).toContain("No opacity modifiers on color classes. Add a semantic token instead (1)");
+    expect(result.stdout).toContain("bg-accent/50 — opacity modifier on color class");
+  });
+
+  it("US2 — undefined-token: bg-black, text-accnt (typo), and text-red-500 all flagged", () => {
+    expect(result.stdout).toContain("Color class references a token not defined in the color token files (3)");
+    expect(result.stdout).toContain("black is not defined");
+    expect(result.stdout).toContain("accnt is not defined");
+    expect(result.stdout).toContain("red-500 is not defined");
+  });
+
+  // text-base is a color reference (--color-base shadows the font size, D3) —
+  // it stays flagged by token-constraints alongside text-danger.
+  it("US2 — token-constraints: text-danger and text-base (collision) both flagged", () => {
+    expect(result.stdout).toContain("Color class violates token constraints (2)");
+    expect(result.stdout).toContain("text-danger — danger not allowed for text-");
+    expect(result.stdout).toContain("text-base — base not allowed for text-");
+  });
+
+  // T018 (US3, SC-003, FR-006) — text-10xl uses a scale value added only to the
+  // fixture's design system (tokens.css), with no lint-color/ source change. The
+  // namespace-complete resolver classifies it non-color automatically.
+  it("US3 — novel size text-10xl produces zero color violations", () => {
+    expect(result.stdout).not.toContain("text-10xl");
+  });
+
+  // Exact total pins that nothing else fires and nothing was lost.
+  it("reports exactly the seven genuine color violations", () => {
+    expect(result.stdout).toContain("7 violations found.");
+  });
+});
+
+// T011 (US2, SC-003, FR-009) — two configured dirs including a nested pair; the
+// file reachable through both is linted exactly once (exact total proves dedup).
+describe("CLI against fixtures/multi-src-app (overlapping/nested dirs)", () => {
+  const result = runCli(join(ROOT, "fixtures/multi-src-app"));
+
+  it("reports each dir's violation once, deduped across the nested pair", () => {
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("app/page.html.erb:1  text-red-500");
+    expect(result.stdout).toContain("app/components/widget.html.erb:1  text-red-500");
+    // Without dedup the nested widget (reachable via "app" and "app/components")
+    // would count twice → 3. Exactly 2 pins the single-scan guarantee.
+    expect(result.stdout).toContain("2 violations found.");
   });
 });

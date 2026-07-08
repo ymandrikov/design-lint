@@ -1,0 +1,12 @@
+<%# US1 — non-color utilities behind an overloaded color prefix. Every class here
+    resolves to a non-color CSS property (font-size, box-shadow, *-width), so the
+    namespace filter drops it before any color rule runs → zero violations. %>
+<div class="text-sm">size, not color</div>
+<div class="text-xs">size, not color</div>
+<div class="text-lg">size, not color</div>
+<div class="text-xl">size, not color</div>
+<div class="shadow-lg">shadow size, not shadow color</div>
+<div class="border-2">border width, not border color</div>
+<div class="ring-2">ring width, not ring color</div>
+<div class="outline-2">outline width, not outline color</div>
+<div class="divide-y-2">divide width, not divide color</div>

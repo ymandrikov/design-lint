@@ -10,8 +10,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { __unstable__loadDesignSystem } from "tailwindcss";
 
 import { bold, dim, red } from "./ansi.ts";
-import { getAllFiles, isStorybookFile } from "./files.ts";
 import {
+  getAllFiles,
+  isStorybookFile,
+  resolveExistingSourceDirs,
+  validateSourceDirs,
+} from "./files.ts";
+import {
+  makeResolveNamespaceKind,
   TAILWIND_COLOR_PREFIXES,
   TAILWIND_SPECTRAL_COLORS,
 } from "./classify.ts";
@@ -42,6 +48,10 @@ type RuleConfig = {
 };
 type Config = {
   colorTokenFiles: string[];
+  // Target-root-relative directories to scan. Absent ⇒ default ["src"]. Raw at
+  // the JSON.parse seam (validateSourceDirs owns every type check), so typed
+  // permissively here and re-checked as `unknown` before use.
+  sourceDirectories?: string[];
   rules: Record<string, RuleConfig>;
 };
 
@@ -61,7 +71,6 @@ type OutIgnore = { file: string; line: number };
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const ROOT = process.argv[2] ? resolve(process.argv[2]) : join(__dirname, "../..");
-const SRC = join(ROOT, "src");
 const req = createRequire(import.meta.url);
 
 // Options accepted by the Tailwind loader; its resolver callbacks type their
@@ -72,11 +81,20 @@ const req = createRequire(import.meta.url);
 // than emit a `path` that could alter candidate resolution.
 type LoadOpts = NonNullable<Parameters<typeof __unstable__loadDesignSystem>[1]>;
 
-async function buildIsValidTailwindCandidate(
-  cssEntryFile: string,
-): Promise<(tok: string) => boolean> {
-  const entryCSS = readFileSync(join(ROOT, cssEntryFile), "utf-8");
-  const ds = await __unstable__loadDesignSystem(entryCSS, {
+// Shared loader for both design systems (the color-token-only oracle and the
+// namespace-complete resolver). The resolver callbacks read files relative to
+// the target root and resolve package `@import`s from node_modules.
+//
+// `extraResolvePaths` widens package resolution beyond the target. The oracle
+// passes none — so a target whose token file's `@import "tailwindcss"` does not
+// resolve stays color-token-only (bg-black / text-red-500 keep being flagged,
+// research D2). The namespace-complete resolver passes the LINTER's own dir so
+// Tailwind's default theme (font-size, shadow, width namespaces) always loads,
+// regardless of the target's install — that is what lets it classify
+// non-color utilities.
+function loadDesignSystem(entryCSS: string, extraResolvePaths: string[] = []) {
+  const resolvePaths = [ROOT, ...extraResolvePaths];
+  return __unstable__loadDesignSystem(entryCSS, {
     base: ROOT,
     loadStylesheet: (async (id: string, base: string) => {
       try {
@@ -84,7 +102,7 @@ async function buildIsValidTailwindCandidate(
         return { content: readFileSync(local, "utf-8"), base: dirname(local) };
       } catch {}
       try {
-        const pkgDir = dirname(req.resolve(`${id}/package.json`, { paths: [base, ROOT] }));
+        const pkgDir = dirname(req.resolve(`${id}/package.json`, { paths: [base, ...resolvePaths] }));
         const pkgJson = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf-8"));
         const css = join(pkgDir, pkgJson.style || "index.css");
         return { content: readFileSync(css, "utf-8"), base: dirname(css) };
@@ -94,7 +112,7 @@ async function buildIsValidTailwindCandidate(
     loadModule: (async (id: string, base: string) => {
       try {
         let resolved: string;
-        try { resolved = req.resolve(id, { paths: [base, ROOT] }); }
+        try { resolved = req.resolve(id, { paths: [base, ...resolvePaths] }); }
         catch { resolved = join(base, id); }
         const mod = await import(pathToFileURL(resolved).href);
         return { module: mod.default ?? mod, base: dirname(resolved) };
@@ -103,7 +121,38 @@ async function buildIsValidTailwindCandidate(
       }
     }) as unknown as LoadOpts["loadModule"],
   });
+}
+
+// The undefined-token / spectral oracle: built from the target's color-token CSS
+// AS-IS (research D2). It knows the target's --color-* semantic tokens; a target
+// whose token file omits `@import "tailwindcss"` therefore rejects bg-black /
+// text-red-500 — exactly the true positives no-undefined-token must keep.
+async function buildIsValidTailwindCandidate(
+  cssEntryFile: string,
+): Promise<(tok: string) => boolean> {
+  const entryCSS = readFileSync(join(ROOT, cssEntryFile), "utf-8");
+  const ds = await loadDesignSystem(entryCSS);
   return (tok: string) => ds.candidatesToCss([tok]).some((r) => r !== null && r !== "");
+}
+
+// The namespace-complete resolver (research D1/D2): Tailwind's full default theme
+// MERGED with the target's color tokens. Answers whether a candidate resolves to
+// a non-color CSS property so the filter can drop it. Kept separate from the
+// oracle above so enriching resolution here never regresses undefined-token.
+async function buildResolveNamespaceKind(
+  colorTokenFiles: string[],
+): Promise<(base: string) => ReturnType<ReturnType<typeof makeResolveNamespaceKind>>> {
+  // Merge every color-token file, then guarantee exactly one Tailwind import so
+  // the default namespaces (font-size, shadow, width, …) are always present —
+  // regardless of whether the target's own files import Tailwind.
+  const merged = colorTokenFiles
+    .map((f) => readFileSync(join(ROOT, f), "utf-8"))
+    .join("\n")
+    .replace(/@import\s+["']tailwindcss["'];?/g, "");
+  // Resolve Tailwind from the linter's own install (__dirname) so the default
+  // theme loads even when the target project cannot resolve it.
+  const ds = await loadDesignSystem(`@import "tailwindcss";\n${merged}`, [__dirname]);
+  return makeResolveNamespaceKind((candidates) => ds.candidatesToCss(candidates));
 }
 
 const ansi = { red, blue: (s: string) => (process.stdout.isTTY ? `\x1b[34m${s}\x1b[0m` : s), dim };
@@ -111,6 +160,49 @@ const ansi = { red, blue: (s: string) => (process.stdout.isTTY ? `\x1b[34m${s}\x
 const config: Config = JSON.parse(
   readFileSync(join(ROOT, "design-system/lint/colors.json"), "utf-8"),
 );
+
+// Resolve which directories to scan before any expensive work. A malformed
+// `sourceDirectories` (empty, wrong type, absolute, ..-escaping) fails loud and
+// exits non-zero here — never a silent clean pass. A configured dir that doesn't
+// exist is surfaced and forces a non-zero exit even if the rest lint clean.
+let validatedSourceDirs: string[];
+try {
+  validatedSourceDirs = validateSourceDirs(config.sourceDirectories);
+} catch (err) {
+  console.error((err as Error).message);
+  process.exit(1);
+}
+const { existing: SOURCE_DIRS, missing: MISSING_DIRS } = resolveExistingSourceDirs(
+  validatedSourceDirs,
+  ROOT,
+);
+for (const dir of MISSING_DIRS) {
+  console.error(`Configured source directory not found: ${dir}`);
+}
+if (SOURCE_DIRS.length === 0) {
+  console.error("No configured source directories exist; nothing to scan.");
+  process.exit(1);
+}
+const hadMissingDir = MISSING_DIRS.length > 0;
+
+// Walk every existing source dir for the given extensions, deduplicating by
+// resolved absolute path so a file reachable through overlapping or nested
+// configured dirs is linted exactly once.
+function collectSourceFiles(...exts: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const dir of SOURCE_DIRS) {
+    for (const f of getAllFiles(dir, ...exts)) {
+      if (isStorybookFile(f)) continue;
+      const abs = resolve(f);
+      if (seen.has(abs)) continue;
+      seen.add(abs);
+      out.push(f);
+    }
+  }
+  return out;
+}
+
 const EXEMPT_CSS = new Set(config.colorTokenFiles.map((f) => join(ROOT, f)));
 
 // Derive semantic token names from --color-* aliases in colorTokenFiles.
@@ -140,6 +232,7 @@ function loadUiComponents(): Set<string> {
 }
 
 const isValidTailwindCandidate = await buildIsValidTailwindCandidate(config.colorTokenFiles[0]).catch(() => null);
+const resolveNamespaceKind = await buildResolveNamespaceKind(config.colorTokenFiles).catch(() => null);
 
 const tokens = {
   semanticSet: new Set(derivedSemanticTokens),
@@ -147,6 +240,7 @@ const tokens = {
   colorPrefixes: TAILWIND_COLOR_PREFIXES,
   uiComponents: loadUiComponents(),
   isValidTailwindCandidate,
+  resolveNamespaceKind,
 };
 
 const linter = createLinter(config.rules ?? {}, tokens, ansi);
@@ -163,12 +257,12 @@ function accumulate({ violations: vs, ignores: is }: LintResult, filePath: strin
   }
 }
 
-for (const f of getAllFiles(SRC, ".css").filter((f) => !isStorybookFile(f))) {
+for (const f of collectSourceFiles(".css")) {
   const source = readFileSync(f, "utf-8");
   accumulate(linter.lintCssSource(source, EXEMPT_CSS.has(f)), f);
 }
 
-for (const f of getAllFiles(SRC, ".tsx", ".ts").filter((f) => !isStorybookFile(f))) {
+for (const f of collectSourceFiles(".tsx", ".ts")) {
   const source = readFileSync(f, "utf-8");
   accumulate(linter.lintStyleSource(source, f), f);
   accumulate(linter.lintTailwindSource(source, f), f);
@@ -179,7 +273,7 @@ for (const f of getAllFiles(SRC, ".tsx", ".ts").filter((f) => !isStorybookFile(f
 // One-time herb WASM init before any .erb parse; Herb.parse is sync thereafter.
 // A single `.erb` glob covers `.html.erb` too — extname("x.html.erb") === ".erb".
 await loadHerb();
-for (const f of getAllFiles(SRC, ".erb").filter((f) => !isStorybookFile(f))) {
+for (const f of collectSourceFiles(".erb")) {
   const source = readFileSync(f, "utf-8");
   accumulate(linter.lintErbSource(source, f), f);
 }
@@ -197,7 +291,9 @@ if (violations.length === 0) {
   console.log(
     `✓ No color lint violations found.${ignoresSummary ? `\n${ignoresSummary}` : ""}`,
   );
-  process.exit(0);
+  // A missing configured dir forces non-zero even with zero violations — a
+  // configured path could not be honored, so the run is not a clean pass.
+  process.exit(hadMissingDir ? 1 : 0);
 }
 
 // Build rule label from colors.json description — that's the designer-facing source of truth.

@@ -1,3 +1,5 @@
+import postcss from "postcss";
+
 import { segment } from "./vendor/segment.ts";
 import { isValidArbitrary } from "./vendor/is-valid-arbitrary.ts";
 import { decodeArbitraryValue } from "./vendor/decode-arbitrary-value.ts";
@@ -42,10 +44,78 @@ export const TAILWIND_STATIC_COLORS = new Set<string>([
   "black", "white", "transparent", "current", "inherit",
 ]);
 
-export const CSS_COLOR_PROPERTIES = new Set<string>(["color", "background-color"]);
+// Standard CSS properties that directly set a color.
+export const CSS_COLOR_PROPERTIES = new Set<string>([
+  "color", "background-color",
+  "border-color", "border-top-color", "border-right-color",
+  "border-bottom-color", "border-left-color",
+  "outline-color", "text-decoration-color",
+  "fill", "stroke", "caret-color", "accent-color",
+]);
 
-function isColorProperty(property: string): boolean {
+// The color-bearing custom properties Tailwind emits for shadow / ring / gradient
+// COLOR utilities. Deliberately NOT the size-composite helpers a non-color
+// utility emits (--tw-shadow, --tw-ring-shadow) — those hold a shadow value, not
+// a color. Kept explicit so `shadow-lg` classifies non-color while
+// `shadow-<color>` (which sets --tw-shadow-color) classifies color.
+export const TW_COLOR_CUSTOM_PROPERTIES = new Set<string>([
+  "--tw-shadow-color", "--tw-inset-shadow-color",
+  "--tw-ring-color", "--tw-inset-ring-color", "--tw-ring-offset-color",
+  "--tw-gradient-from", "--tw-gradient-via", "--tw-gradient-to",
+]);
+
+// Predicate over an ARBITRARY-property name ("[<property>:<value>]"): any custom
+// property can carry a color, so `--*` counts. Consumed by classifyParts.
+export function isColorProperty(property: string): boolean {
   return property.startsWith("--") || CSS_COLOR_PROPERTIES.has(property.toLowerCase());
+}
+
+// Predicate over a COMPILED declaration property. Precise (no blanket `--*`) so a
+// size utility's helper vars (--tw-shadow, --tw-ring-shadow) read as non-color
+// while a color utility's --tw-shadow-color / --tw-ring-color reads as color.
+function isColorDeclaration(property: string): boolean {
+  const p = property.toLowerCase();
+  return CSS_COLOR_PROPERTIES.has(p) || TW_COLOR_CUSTOM_PROPERTIES.has(p);
+}
+
+// The category a candidate's value resolves into (data-model "Namespace kind").
+export type NamespaceKind = "color" | "non-color" | "unresolved";
+
+// Pure classifier over the CSS property names a candidate compiled to:
+//   []                     → "unresolved" (kept in scope; may be a typo)
+//   any color property     → "color"
+//   properties, none color → "non-color" (dropped before every color rule)
+export function classifyDeclarations(properties: string[]): NamespaceKind {
+  if (properties.length === 0) return "unresolved";
+  return properties.some(isColorDeclaration) ? "color" : "non-color";
+}
+
+// Extract declaration property names from compiled utility CSS. `@property`
+// descriptor declarations (syntax / inherits / initial-value) ride along
+// harmlessly — none is a color property — so no special-casing is needed.
+function extractProperties(css: string): string[] {
+  const props: string[] = [];
+  try {
+    postcss.parse(css).walkDecls((d) => {
+      props.push(d.prop);
+    });
+  } catch {
+    // Malformed compile output — treat as no declarations (unresolved).
+  }
+  return props;
+}
+
+// Build the namespace resolver from a `candidatesToCss` oracle — the
+// namespace-complete design system in index.ts, or a stub in unit tests. One
+// candidate compile per base (FR-008).
+export function makeResolveNamespaceKind(
+  candidatesToCss: (candidates: string[]) => (string | null)[],
+): (base: string) => NamespaceKind {
+  return (base: string) => {
+    const css = candidatesToCss([base])[0];
+    if (!css) return "unresolved";
+    return classifyDeclarations(extractProperties(css));
+  };
 }
 
 export const TAILWIND_COLOR_PREFIXES: string[] = [

@@ -224,6 +224,18 @@ describe("token-constraints", () => {
     });
   });
 
+  // T016 (INV-2) — a KEPT candidate is judged exactly as before. The text-base
+  // collision (--color-base shadows the font size, research D3) resolves to a
+  // color, so token-constraints must still flag it behind text-.
+  describe("preservation (INV-2) — text-base collision stays flagged", () => {
+    it("reports text-base — base is a color token forbidden behind text-", () => {
+      const el = `<div className="text-base" />`;
+      const result = lint(el, tokenConstraintsConfig, ["base", "primary"]);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toContain("base");
+    });
+  });
+
   describe("escaping", () => {
     it("skips lines with color-lint-ignore", () => {
       const el = `<div className="text-primary" /> {/* color-lint-ignore */}`;

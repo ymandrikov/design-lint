@@ -1,0 +1,5 @@
+<%# US3 — a size value the linter has never seen (--text-10xl, not a Tailwind
+    default), added to the design system in tokens.css. The namespace-complete
+    resolver classifies it as non-color automatically, with no lint-color/ edit,
+    so it produces zero color violations. %>
+<div class="text-10xl">novel font size, resolves non-color</div>

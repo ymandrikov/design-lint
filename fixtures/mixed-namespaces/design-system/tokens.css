@@ -1,0 +1,26 @@
+/*
+ * Color token file — the single source of semantic color tokens.
+ * Exempt from raw-color rules (listed in colorTokenFiles).
+ *
+ * Deliberately does NOT `@import "tailwindcss"` — this mirrors a real target
+ * (e.g. solaris) whose token file carries only semantic colors. The
+ * color-token-only oracle therefore rejects bg-black / text-red-500 / typos,
+ * so no-undefined-token keeps flagging those genuine problems. The
+ * namespace-complete resolver (built separately in index.ts) merges these
+ * tokens with Tailwind's default theme to classify non-color utilities.
+ */
+@theme {
+  --color-accent: oklch(0.6 0.2 260);
+  --color-danger: oklch(0.6 0.2 25);
+  --color-primary: oklch(0.6 0.2 260);
+
+  /* Collides with the `base` font-size scale value: for text-, Tailwind resolves
+     the color namespace first, so `text-base` compiles to a color (research D3)
+     and stays flagged by token-constraints. */
+  --color-base: oklch(0.5 0.1 260);
+
+  /* US3 — a novel font-size scale value Tailwind does not ship by default.
+     `text-10xl` resolves to a font-size (non-color) through the
+     namespace-complete resolver with no lint-color/ change (FR-006). */
+  --text-10xl: 20rem;
+}

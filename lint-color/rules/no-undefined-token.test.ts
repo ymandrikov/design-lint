@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ansi, type CheckTokenFn } from "../helpers.js";
 import { runTokenRuleOnSource } from "../helpers.js";
+import { createLinter } from "../linter.ts";
 
 const { checkToken } = (await import("./no-undefined-token.js")) as {
   checkToken: CheckTokenFn;
@@ -96,5 +97,53 @@ describe("no-undefined-token", () => {
       const result = lint(el);
       expect(result).toHaveLength(0);
     });
+  });
+
+  // T016 (INV-2) — the rule's verdict on a KEPT candidate is unchanged. bg-black
+  // (default-palette color the color-only oracle rejects) and a typo remain
+  // flagged exactly as before the namespace feature.
+  describe("preservation (INV-2) — genuine problems still flagged", () => {
+    it("bg-black — a color the color-only oracle rejects stays flagged", () => {
+      const el = `<div className="bg-black" />`;
+      const result = lint(el);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toContain("black is not defined");
+    });
+
+    it("a typo behind a color prefix (text-accnt) stays flagged", () => {
+      const el = `<div className="text-accnt" />`;
+      expect(lint(el)).toHaveLength(1);
+    });
+  });
+});
+
+// T013 — the bucket-3 root cause and its fix. no-undefined-token flags text-sm
+// on its own (a color-token-only oracle rejects the size utility); the linter's
+// non-color filter suppresses it once a namespace-complete resolver is present.
+describe("no-undefined-token — non-color filter regression (bucket-3)", () => {
+  // Color-only oracle: only real color tokens resolve; size utilities do not.
+  const oracle = (tok: string) => tok === "text-primary" || tok === "bg-primary";
+  const baseTokens = {
+    colorPrefixes: ["bg", "text", "shadow", "border"],
+    semanticSet: new Set(["primary"]),
+    spectralSet: new Set<string>(),
+    isValidTailwindCandidate: oracle,
+  };
+  const rules = { "no-undefined-token": { enabled: true } };
+  const source = `<div className="text-sm" />`;
+
+  it("without a resolver, text-sm is falsely flagged", () => {
+    const v = createLinter(rules, baseTokens, ansi).lintTailwindSource(source).violations;
+    expect(v).toHaveLength(1);
+  });
+
+  it("with a namespace-complete resolver, text-sm produces no finding", () => {
+    const tokens = {
+      ...baseTokens,
+      resolveNamespaceKind: (base: string) =>
+        base === "text-sm" ? ("non-color" as const) : ("color" as const),
+    };
+    const v = createLinter(rules, tokens, ansi).lintTailwindSource(source).violations;
+    expect(v).toHaveLength(0);
   });
 });

@@ -28,6 +28,17 @@ function checkTailwind(el: string, rules: Rules) {
   return createLinter(rules, minimalTokens, ansi).lintTailwindSource(el).violations;
 }
 
+// Same tokens plus a namespace resolver that classifies text-sm as non-color and
+// everything else as color/unresolved — the shape index.ts wires in production.
+function checkTailwindWithResolver(el: string, rules: Rules) {
+  const tokens = {
+    ...minimalTokens,
+    resolveNamespaceKind: (base: string) =>
+      base === "text-sm" ? ("non-color" as const) : ("color" as const),
+  };
+  return createLinter(rules, tokens, ansi).lintTailwindSource(el).violations;
+}
+
 // token-constraints needs an allow list to produce a violation — merge it into the rule config.
 function checkWithConstraints(el: string, rules: Rules) {
   const merged = {
@@ -107,6 +118,42 @@ describe("quote-aware token splitting (segment parity)", () => {
   it("a quoted '/' is not a Modifier — no opacity violation fires", () => {
     const el = `<div className="bg-[url('a/b.png')]" />`;
     expect(checkTailwind(el, enabled)).toHaveLength(0);
+  });
+});
+
+// T009/T010 — the single non-color filter seam (FR-002/003): one dispatch point
+// drops a non-color candidate from EVERY color rule; color/unresolved fan out.
+describe("non-color filter seam (FR-003)", () => {
+  // no-undefined-token would flag text-sm (minimalTokens' oracle rejects it) —
+  // the resolver must suppress it before the rule runs.
+  const allOn = {
+    "no-undefined-token": { enabled: true },
+    "no-spectral-color": { enabled: true },
+    "token-constraints": { enabled: true },
+  };
+
+  it("a non-color candidate (text-sm) yields zero findings from every color rule", () => {
+    const el = `<div className="text-sm" />`;
+    expect(checkTailwindWithResolver(el, allOn)).toHaveLength(0);
+  });
+
+  it("without a resolver the filter is a no-op — text-sm still reaches the rules", () => {
+    // minimalTokens has no resolveNamespaceKind: unit tests without the Tailwind
+    // API are unaffected (mirrors the isValidTailwindCandidate null pattern).
+    const el = `<div className="text-sm" />`;
+    expect(checkTailwind(el, allOn)).toHaveLength(1);
+  });
+
+  it("a color candidate still fans out (bg-red-500 → spectral)", () => {
+    const el = `<div className="bg-red-500" />`;
+    expect(checkTailwindWithResolver(el, allOn)).toHaveLength(1);
+  });
+
+  it("an unresolved candidate is kept (typo bg-nope → undefined-token)", () => {
+    // resolver returns "color" for non-text-sm here; the point is it is NOT
+    // "non-color", so the candidate is not dropped.
+    const el = `<div className="bg-nope" />`;
+    expect(checkTailwindWithResolver(el, allOn)).toHaveLength(1);
   });
 });
 

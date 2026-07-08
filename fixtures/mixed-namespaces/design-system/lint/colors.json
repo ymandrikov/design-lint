@@ -1,0 +1,56 @@
+{
+  "colorTokenFiles": ["design-system/tokens.css"],
+  "sourceDirectories": ["src"],
+
+  "rules": {
+    "no-style-color": {
+      "enabled": true,
+      "description": "No color or backgroundColor in style= props"
+    },
+    "no-raw-css-color": {
+      "enabled": true,
+      "description": "No raw color values in component CSS. Use semantic tokens instead"
+    },
+    "no-var-color": {
+      "enabled": true,
+      "description": "No CSS variable behind a color class. Use the token's semantic utility class instead"
+    },
+    "no-opacity-modifier": {
+      "enabled": true,
+      "description": "No opacity modifiers on color classes. Add a semantic token instead"
+    },
+    "no-spectral-color": {
+      "enabled": true,
+      "description": "No spectral (palette) Tailwind color classes. Use semantic tokens instead"
+    },
+    "no-dark-variant": {
+      "enabled": true,
+      "description": "Don't use dark: variant. Use semantic tokens instead"
+    },
+    "no-useless-hover": {
+      "enabled": true,
+      "description": "Don't use hover: on non-interactive elements",
+      "interactiveElements": ["tr", "td", "th"]
+    },
+    "no-component-color-override": {
+      "enabled": true,
+      "description": "Don't override color className on component. Choose from the variants, or create a new one"
+    },
+    "no-undefined-token": {
+      "enabled": true,
+      "description": "Color class references a token not defined in the color token files"
+    },
+    "token-constraints": {
+      "enabled": true,
+      "description": "Color class violates token constraints",
+      "allowed": {
+        "text": ["*foreground*", "*content*", "primary", "link*"],
+        "border": ["border*", "input", "ring"],
+        "hover:": ["*-hover"]
+      },
+      "denied": {
+        "*": ["*-foreground", "*-content"]
+      }
+    }
+  }
+}

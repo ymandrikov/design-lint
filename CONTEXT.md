@@ -23,10 +23,13 @@ A literal color value — hex, `rgb()`, `hsl()`, `oklch()`, etc. — whether in 
 _Avoid_: hardcoded color, inline color
 
 **Color prefix**:
-A Tailwind utility prefix that carries a color value (`bg`, `text`, `border`, `ring`, `fill`, …). Rules only inspect classes behind a color prefix.
+A Tailwind utility prefix that _can_ carry a color value (`bg`, `text`, `border`, `ring`, `fill`, …). A prefix match makes a class a color _candidate_, not a color _reference_ — many of these prefixes are overloaded (`text-sm`, `shadow-lg`, `border-2` are sizes, not colors). Whether a class is actually a color is decided by namespace resolution (see **Namespace kind**), not by the prefix alone.
+
+**Namespace kind**:
+What a candidate's value resolves to when compiled against Tailwind's default theme merged with the target's color tokens. `color` — resolves to ≥1 color CSS property (`bg-accent`, `text-red-500`, and `text-base` where `--color-base` shadows the size). `non-color` — resolves only to non-color properties (`text-sm` → `font-size`, `shadow-lg` → `box-shadow`); dropped before any color rule runs. `unresolved` — compiles to nothing (a typo like `text-accnt`); kept, so undefined-token still flags it. **A class is a color reference only if its value resolves under a color namespace or under none** — never by prefix presence.
 
 **Candidate**:
-A class string that Tailwind can compile to CSS for the target's design system. A color class that is not a valid candidate references an undefined token. A string Tailwind would discard outright (malformed syntax, double modifier) is not a candidate; rules do not inspect it.
+A class string that Tailwind can compile to CSS for the target's design system. A color class that is not a valid candidate references an undefined token. A string Tailwind would discard outright (malformed syntax, double modifier) is not a candidate; rules do not inspect it. A candidate whose **Namespace kind** is `non-color` is filtered out before the color rules — it is a size/width/shadow utility, not a color.
 
 **CSS-variable reference**:
 A color applied by referencing a custom property from a class — `bg-[var(--x)]` or the `bg-(--x)` shorthand — instead of the token's utility class. Forbidden even when the variable is a semantic token; use the utility form (`bg-primary`).
@@ -61,8 +64,12 @@ _Avoid_: disable comment
 Config-defined allow/deny patterns restricting which semantic tokens may appear behind which color prefix (e.g. only `*-content` tokens behind `text-`).
 
 **Target**:
-The host project being linted — a directory with `src/` and a lint config. The linter runs against a target; it does not live inside it.
+The host project being linted — a directory with a lint config and one or more **source directories**. The linter runs against a target; it does not live inside it.
 _Avoid_: host app, root
+
+**Source directory**:
+A target-root-relative directory the linter walks for lintable files. Configured as the `sourceDirectories` list in the lint config; absent ⇒ default `["src"]`. When set, the list fully replaces the default (it does not augment `src`). A configured directory that is missing fails loud and forces a non-zero exit; a file reachable through overlapping or nested directories is linted exactly once.
+_Avoid_: scan root, search path
 
 **ERB template**:
 A Ruby `.erb`/`.html.erb` source file. Color rules inspect only its static HTML `class` attributes, via the herb parser; `style=` and component-shaped rules do not apply. A malformed template surfaces a parse note and still lints its recovered content — it never aborts the run.

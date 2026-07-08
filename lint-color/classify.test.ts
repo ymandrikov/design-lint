@@ -6,10 +6,13 @@ import { __unstable__loadDesignSystem } from "tailwindcss";
 
 import {
   classifyColorPart,
+  classifyDeclarations,
   classifyParts,
   composeColorParts,
   findColorPrefix,
   findSpectralMatch,
+  isColorProperty,
+  makeResolveNamespaceKind,
   splitColorToken,
   TAILWIND_COLOR_PREFIXES,
   TAILWIND_SPECTRAL_COLORS,
@@ -248,6 +251,83 @@ describe("classifyParts — routes both spellings to one verdict (issue 05)", ()
     expect(verdict("bg-[red]")).toBe("raw");
     expect(verdict("bg-[var(--x)]")).toBe("var");
     expect(verdict("bg-red-500")).toBe("spectral");
+  });
+});
+
+// T003 — the color-property predicate (data-model "Color-property predicate").
+// Drives which compiled declarations mark a candidate as a color reference.
+describe("isColorProperty — color CSS properties vs size/width/image", () => {
+  const colorProps = [
+    "color", "background-color", "border-color",
+    "border-top-color", "border-right-color", "border-bottom-color", "border-left-color",
+    "outline-color", "text-decoration-color",
+    "fill", "stroke", "caret-color", "accent-color",
+    // custom properties are color-capable (arbitrary [--x:red] stays in scope)
+    "--tw-shadow-color", "--tw-gradient-from", "--tw-gradient-to", "--tw-ring-color", "--my-var",
+  ];
+  for (const p of colorProps) {
+    it(`${p} is a color property`, () => expect(isColorProperty(p)).toBe(true));
+  }
+
+  const nonColorProps = [
+    "font-size", "box-shadow", "border-width",
+    "border-top-width", "border-bottom-width", "outline-width",
+    "background-image", "text-decoration-thickness",
+  ];
+  for (const p of nonColorProps) {
+    it(`${p} is not a color property`, () => expect(isColorProperty(p)).toBe(false));
+  }
+});
+
+// T006 — the pure classifier over compiled declaration property names.
+describe("classifyDeclarations — kind from compiled properties", () => {
+  it("no declarations → unresolved (kept; may be a typo)", () => {
+    expect(classifyDeclarations([])).toBe("unresolved");
+  });
+
+  it("any color property → color", () => {
+    expect(classifyDeclarations(["background-color"])).toBe("color");
+    expect(classifyDeclarations(["color"])).toBe("color");
+    // shadow-<color> / ring-<color> emit color-bearing custom props
+    expect(classifyDeclarations(["--tw-shadow-color"])).toBe("color");
+    expect(classifyDeclarations(["--tw-ring-color"])).toBe("color");
+  });
+
+  it("declarations but none a color property → non-color", () => {
+    expect(classifyDeclarations(["font-size", "line-height"])).toBe("non-color");
+    expect(classifyDeclarations(["border-style", "border-width"])).toBe("non-color");
+    expect(classifyDeclarations(["outline-style", "outline-width"])).toBe("non-color");
+    // shadow-<size> emits --tw-shadow (a composite, NOT a color) + box-shadow
+    expect(classifyDeclarations(["--tw-shadow", "box-shadow"])).toBe("non-color");
+    // ring-<width> emits --tw-ring-shadow (NOT a color) + box-shadow
+    expect(classifyDeclarations(["--tw-ring-shadow", "box-shadow"])).toBe("non-color");
+  });
+});
+
+// T005 — resolver over a STUB oracle: no Tailwind dependency in the unit test.
+describe("makeResolveNamespaceKind — kind per candidate via a stub design system", () => {
+  // Minimal stub mirroring the namespace-complete DS's compiled output shape.
+  const stub: Record<string, string> = {
+    "text-sm": ".text-sm{font-size:var(--text-sm);line-height:1}",
+    "shadow-lg": ".shadow-lg{--tw-shadow:0 1px 2px var(--tw-shadow-color,#0001);box-shadow:var(--tw-shadow)}",
+    "border-2": ".border-2{border-style:var(--tw-border-style);border-width:2px}",
+    "ring-2": ".ring-2{--tw-ring-shadow:0 0 0 2px var(--tw-ring-color,#000);box-shadow:var(--tw-ring-shadow)}",
+    "outline-2": ".outline-2{outline-style:var(--tw-outline-style);outline-width:2px}",
+    "bg-accent": ".bg-accent{background-color:var(--color-accent)}",
+    "text-red-500": ".text-red-500{color:var(--color-red-500)}",
+    "bg-black": ".bg-black{background-color:var(--color-black)}",
+    "shadow-accent": ".shadow-accent{--tw-shadow-color:var(--color-accent)}",
+  };
+  const resolve = makeResolveNamespaceKind((c) => [stub[c[0]] ?? null]);
+
+  for (const base of ["text-sm", "shadow-lg", "border-2", "ring-2", "outline-2"]) {
+    it(`${base} → non-color`, () => expect(resolve(base)).toBe("non-color"));
+  }
+  for (const base of ["bg-accent", "text-red-500", "bg-black", "shadow-accent"]) {
+    it(`${base} → color`, () => expect(resolve(base)).toBe("color"));
+  }
+  it("text-accnt (typo, compiles to nothing) → unresolved", () => {
+    expect(resolve("text-accnt")).toBe("unresolved");
   });
 });
 
