@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "design-lint run record",
+  "description": "The single JSON document emitted on stdout by `lint-color/index.ts --format json`. Stdout carries exactly this document and nothing else.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "violations", "ignores", "warnings", "missingSourceDirs"],
+  "properties": {
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["violations", "ignores"],
+      "properties": {
+        "violations": { "type": "integer", "minimum": 0, "description": "Total violation count; equals violations.length" },
+        "ignores": { "type": "integer", "minimum": 0, "description": "Total suppressed-line count; equals ignores.length" }
+      }
+    },
+    "violations": {
+      "type": "array",
+      "description": "Sorted by file, then line, then rule, then message — byte-deterministic for identical target trees.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["file", "line", "rule", "message"],
+        "properties": {
+          "file": { "type": "string", "description": "Target-root-relative path" },
+          "line": { "type": "integer", "minimum": 1 },
+          "rule": {
+            "type": "string",
+            "description": "Kebab-case rule name; matches colors.json rules keys",
+            "enum": [
+              "no-style-color",
+              "no-raw-css-color",
+              "no-var-color",
+              "no-opacity-modifier",
+              "no-spectral-color",
+              "token-constraints",
+              "no-dark-variant",
+              "no-useless-hover",
+              "no-component-color-override",
+              "no-undefined-token"
+            ]
+          },
+          "message": { "type": "string", "description": "Plain text, never contains ANSI escape codes" }
+        }
+      }
+    },
+    "ignores": {
+      "type": "array",
+      "description": "Lines suppressed with color-lint-ignore.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["file", "line"],
+        "properties": {
+          "file": { "type": "string" },
+          "line": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "description": "Run diagnostics (e.g. ERB parse notes), file-prefixed plain text. Also mirrored to stderr.",
+      "items": { "type": "string" }
+    },
+    "missingSourceDirs": {
+      "type": "array",
+      "description": "Configured source directories that do not exist. Non-empty forces exit code 2.",
+      "items": { "type": "string" }
+    }
+  }
+}

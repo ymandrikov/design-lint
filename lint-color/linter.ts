@@ -76,7 +76,7 @@ type CheckValueRule = NamedRule & {
 
 type Violation = { line: number; message: string; ruleId: number };
 type RuleViolation = { message: string; ruleId: number };
-type LintResult = { violations: Violation[]; ignores: number[] };
+type LintResult = { violations: Violation[]; ignores: number[]; warnings: string[] };
 
 function buildDisabledRules(rules: LinterConfig): Set<string> {
   return new Set(
@@ -217,7 +217,7 @@ export function createLinter(config: LinterConfig, tokens: Tokens, ansi: Ansi) {
       });
 
       const ignores = [...ignore].sort((a, b) => a - b);
-      return { violations, ignores };
+      return { violations, ignores, warnings: [] };
     },
 
     // Walks ERB/HTML `class` attributes and runs the same token pipeline on each
@@ -236,36 +236,38 @@ export function createLinter(config: LinterConfig, tokens: Tokens, ansi: Ansi) {
       }
 
       // FR-006/D4: never abort the run — surface parse errors as a note and
-      // still return whatever the recovered tree yielded.
+      // still return whatever the recovered tree yielded. The note is returned,
+      // not printed: the reporter layer owns the destination (stderr, JSON doc).
+      const warnings: string[] = [];
       const errors = erbParseErrors(result);
       if (errors.length > 0) {
         const where = filePath ? `${filePath}: ` : "";
-        console.warn(`${where}ERB parse note — ${errors.length} parse error(s); linting recovered content only.`);
+        warnings.push(`${where}ERB parse note — ${errors.length} parse error(s); linting recovered content only.`);
       }
 
       const ignores = [...ignore].sort((a, b) => a - b);
-      return { violations, ignores };
+      return { violations, ignores, warnings };
     },
 
     // Checks inline style={{ color/backgroundColor }} props.
     lintStyleSource(source: string, filePath: string): LintResult {
       const violations = lintSourceIfEnabled(disabledRules, ruleStyleColor, source, filePath, {}, ansi, config[ruleStyleColor.name])
         .map((v) => ({ ...v, ruleId: ruleStyleColor.id }));
-      return { violations, ignores: [] };
+      return { violations, ignores: [], warnings: [] };
     },
 
     // Checks hover: variant used on non-interactive elements.
     lintHoverSource(source: string, filePath: string): LintResult {
       const violations = lintSourceIfEnabled(disabledRules, ruleHoverInteractive, source, filePath, tokens, ansi, config[ruleHoverInteractive.name])
         .map((v) => ({ ...v, ruleId: ruleHoverInteractive.id }));
-      return { violations, ignores: [] };
+      return { violations, ignores: [], warnings: [] };
     },
 
     // Checks shadcn UI component color overrides.
     lintComponentSource(source: string, filePath: string): LintResult {
       const violations = lintSourceIfEnabled(disabledRules, ruleUiColorOverride, source, filePath, tokens, ansi, config[ruleUiColorOverride.name])
         .map((v) => ({ ...v, ruleId: ruleUiColorOverride.id }));
-      return { violations, ignores: [] };
+      return { violations, ignores: [], warnings: [] };
     },
 
     // Checks CSS source for raw color values and Tailwind tokens in @apply directives.
@@ -281,7 +283,7 @@ export function createLinter(config: LinterConfig, tokens: Tokens, ansi: Ansi) {
       } catch {
         // Malformed CSS — nothing structural to walk. Report nothing rather
         // than fall back to the line scanner this replaced.
-        return { violations, ignores };
+        return { violations, ignores, warnings: [] };
       }
 
       // A `/* color-lint-ignore */` comment suppresses violations on its own
@@ -294,7 +296,7 @@ export function createLinter(config: LinterConfig, tokens: Tokens, ansi: Ansi) {
       });
 
       // Exempt (color token) files still count ignores but skip color rules.
-      if (isExempt) return { violations, ignores };
+      if (isExempt) return { violations, ignores, warnings: [] };
 
       root.walkDecls((decl) => {
         const line = decl.source?.start?.line;
@@ -312,7 +314,7 @@ export function createLinter(config: LinterConfig, tokens: Tokens, ansi: Ansi) {
         violations.push(...checkTailwindClasses(atRule.params, line!));
       });
 
-      return { violations, ignores };
+      return { violations, ignores, warnings: [] };
     },
   };
 }

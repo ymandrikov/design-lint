@@ -1,6 +1,6 @@
 {
   "name": "design-lint",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Design-system linter — color rules first. Sandbox for a future publishable package.",
   "type": "module",
@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "lint:demo": "node lint-color/index.ts fixtures/demo-app"
+    "lint:demo": "node lint-color/index.ts fixtures/demo-app",
+    "lint:demo:json": "node lint-color/index.ts fixtures/demo-app --format json"
   },
   "dependencies": {
     "@herb-tools/node-wasm": "0.10.1",

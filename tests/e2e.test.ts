@@ -1,6 +1,6 @@
 // End-to-end: run the CLI against fixtures/demo-app and assert on real output.
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
@@ -8,8 +8,8 @@ import { describe, expect, it } from "vitest";
 
 const ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 
-function runCli(target: string) {
-  return spawnSync("node", [join(ROOT, "lint-color/index.ts"), target], {
+function runCli(target: string, ...args: string[]) {
+  return spawnSync("node", [join(ROOT, "lint-color/index.ts"), target, ...args], {
     cwd: ROOT,
     encoding: "utf-8",
   });
@@ -103,6 +103,18 @@ describe("CLI against fixtures/demo-app", () => {
     expect(result.stdout).not.toContain("border-border");
   });
 
+  // 015/T016 (US3) — the report opens with the summary: total + affected files,
+  // then per-rule counts descending, agreeing with the detail listing's counts.
+  it("opens with the summary header and per-rule counts", () => {
+    const lines = result.stdout.split("\n");
+    expect(lines[0]).toBe("Color lint: 23 violations in 2 files");
+    expect(lines[1]).toBe("");
+    expect(lines[2]).toBe("  6  No raw color values in component CSS. Use semantic tokens instead");
+    expect(lines[3]).toBe("  4  No opacity modifiers on color classes. Add a semantic token instead");
+    // The full table: one line per triggered rule, counts descending to 1.
+    expect(result.stdout).toContain("  1  Don't use hover: on non-interactive elements");
+  });
+
   // T007 — non-regression (SC-004, FR-009): the ERB path is additive. The demo
   // run scans no .erb files, so its output is unchanged by the feature. Every
   // exact count asserted above (23 total, per-rule counts) is the guard — a
@@ -169,10 +181,10 @@ describe("CLI against fixtures/rails-app (source under app/, no src/)", () => {
 // T008 (US1, SC-004, FR-006/007/008) — misconfiguration always fails loud and
 // exits non-zero, never a silent clean pass or a crash.
 describe("CLI misconfiguration handling", () => {
-  it("names a missing dir, still lints the existing sibling, exits non-zero", () => {
+  it("names a missing dir, still lints the existing sibling, exits 2 (run error)", () => {
     // rails-app-missing configures ["app","ghost"]; app/ exists, ghost does not.
     const result = runCli(join(ROOT, "fixtures/rails-app-missing"));
-    expect(result.status).not.toBe(0);
+    expect(result.status).toBe(2);
     expect(result.stderr).toContain("ghost");
     // The existing sibling still lints in the same run.
     expect(result.stdout).toContain("app/views/home.html.erb:1  text-red-500");
@@ -187,9 +199,9 @@ describe("CLI misconfiguration handling", () => {
   ];
 
   for (const { name, value, needle } of cases) {
-    it(`rejects ${name}: actionable message on stderr, non-zero exit, no crash`, () => {
+    it(`rejects ${name}: actionable message on stderr, exit 2, no crash`, () => {
       const result = runCli(tempTargetWithSourceDirs(value));
-      expect(result.status).toBe(1);
+      expect(result.status).toBe(2);
       expect(result.stderr).toMatch(needle);
       // Never a clean pass, never a thrown stack trace.
       expect(result.stdout).not.toContain("No color lint violations found");
@@ -259,6 +271,96 @@ describe("CLI against fixtures/mixed-namespaces (namespace-aware classification)
   // Exact total pins that nothing else fires and nothing was lost.
   it("reports exactly the seven genuine color violations", () => {
     expect(result.stdout).toContain("7 violations found.");
+  });
+});
+
+// 015/T007 (US1) — `--format json` emits one deterministic full-run-record JSON
+// document on stdout; counts agree with the human run over the same fixture.
+describe("CLI --format json against fixtures/demo-app", () => {
+  const result = runCli(join(ROOT, "fixtures/demo-app"), "--format", "json");
+
+  it("emits exactly one parseable JSON document on stdout, exit 1", () => {
+    expect(result.status).toBe(1);
+    const doc = JSON.parse(result.stdout);
+    expect(Object.keys(doc)).toEqual([
+      "summary",
+      "violations",
+      "ignores",
+      "warnings",
+      "missingSourceDirs",
+    ]);
+  });
+
+  it("matches the human run's totals and uses colors.json rule names", () => {
+    const doc = JSON.parse(result.stdout);
+    // The human run over the same fixture reports 23 violations, 1 suppression.
+    expect(doc.summary).toEqual({ violations: 23, ignores: 1 });
+    expect(doc.violations).toHaveLength(23);
+
+    const configuredRules = Object.keys(
+      JSON.parse(
+        readFileSync(join(ROOT, "fixtures/demo-app/design-system/lint/colors.json"), "utf-8"),
+      ).rules,
+    );
+    for (const v of doc.violations) {
+      expect(configuredRules).toContain(v.rule);
+      expect(Object.keys(v)).toEqual(["file", "line", "rule", "message"]);
+    }
+  });
+
+  it("is byte-identical across two consecutive runs (SC-002)", () => {
+    const again = runCli(join(ROOT, "fixtures/demo-app"), "--format", "json");
+    expect(again.stdout).toBe(result.stdout);
+  });
+});
+
+// 015/T011 (US2) — the 0/1/2 exit-code contract (contracts/cli.md): automation
+// routes gate-fail vs infra-fail on the code alone.
+function tempCleanTarget(sourceDirectories: string[] = ["src"]): string {
+  const dir = mkdtempSync(join(tmpdir(), "clean-target-"));
+  mkdirSync(join(dir, "design-system/lint"), { recursive: true });
+  mkdirSync(join(dir, "src"), { recursive: true });
+  writeFileSync(
+    join(dir, "design-system/lint/colors.json"),
+    JSON.stringify({
+      colorTokenFiles: ["design-system/tokens.css"],
+      sourceDirectories,
+      rules: {},
+    }),
+  );
+  writeFileSync(join(dir, "design-system/tokens.css"), "@theme {\n  --color-primary: #ffffff;\n}\n");
+  writeFileSync(join(dir, "src/app.tsx"), `export const App = () => <div className="flex" />;\n`);
+  return dir;
+}
+
+describe("CLI exit-code matrix (US2)", () => {
+  it("exits 0 on a clean run with all configured dirs present", () => {
+    const result = runCli(tempCleanTarget());
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("No color lint violations found");
+  });
+
+  it("exits 1 when violations are found", () => {
+    expect(runCli(join(ROOT, "fixtures/demo-app")).status).toBe(1);
+  });
+
+  it("exits 2 when a configured dir is missing, even though the scan is clean", () => {
+    const result = runCli(tempCleanTarget(["src", "ghost"]));
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("ghost");
+  });
+
+  it("exits 2 on an unrecognized --format value, naming accepted values on stderr", () => {
+    const result = runCli(join(ROOT, "fixtures/demo-app"), "--format", "yaml");
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("human");
+    expect(result.stderr).toContain("json");
+  });
+
+  it("exits 2 on an unknown flag", () => {
+    const result = runCli(join(ROOT, "fixtures/demo-app"), "--frmt", "json");
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("--format");
   });
 });
 

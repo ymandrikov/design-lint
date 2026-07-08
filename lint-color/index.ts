@@ -7,6 +7,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { parseArgs } from "node:util";
 import { __unstable__loadDesignSystem } from "tailwindcss";
 
 import { bold, dim, red } from "./ansi.ts";
@@ -35,6 +36,7 @@ import * as ruleUndefinedToken from "./rules/no-undefined-token.ts";
 
 import { createLinter } from "./linter.ts";
 import { loadHerb } from "./ast-erb.ts";
+import { renderHuman, renderJson, type RunResult } from "./report.ts";
 
 // Shape of design-system/lint/colors.json at the JSON.parse boundary (the one
 // external-data seam). Every rule sub-config is open-ended; only the fields this
@@ -64,13 +66,36 @@ type RuleModule = { id: number; name: string };
 type LintResult = {
   violations: { line: number; message: string; ruleId: number }[];
   ignores: number[];
+  warnings: string[];
 };
 
-type OutViolation = { file: string; line: number; rule: number; message: string };
-type OutIgnore = { file: string; line: number };
-
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const ROOT = process.argv[2] ? resolve(process.argv[2]) : join(__dirname, "../..");
+
+// Flag parsing (research D2): stdlib parseArgs; the positional target-root
+// keeps working. An unknown flag (parseArgs throws) or an unrecognized
+// --format value is a run error — accepted values on stderr, exit 2 (FR-010).
+const FORMAT_VALUES = ["human", "json"] as const;
+type Format = (typeof FORMAT_VALUES)[number];
+function parseCliArgs(): { format: Format; targetRoot: string | undefined } {
+  try {
+    const { values, positionals } = parseArgs({
+      options: { format: { type: "string", default: "human" } },
+      allowPositionals: true,
+    });
+    const format = values.format;
+    if (!(FORMAT_VALUES as readonly string[]).includes(format)) {
+      console.error(`Unrecognized --format value: ${format}. Accepted values: human, json.`);
+      process.exit(2);
+    }
+    return { format: format as Format, targetRoot: positionals[0] };
+  } catch (err) {
+    console.error(`${(err as Error).message} Accepted flags: --format <human|json>.`);
+    process.exit(2);
+  }
+}
+const { format, targetRoot } = parseCliArgs();
+
+const ROOT = targetRoot ? resolve(targetRoot) : join(__dirname, "../..");
 const req = createRequire(import.meta.url);
 
 // Options accepted by the Tailwind loader; its resolver callbacks type their
@@ -155,7 +180,13 @@ async function buildResolveNamespaceKind(
   return makeResolveNamespaceKind((candidates) => ds.candidatesToCss(candidates));
 }
 
-const ansi = { red, blue: (s: string) => (process.stdout.isTTY ? `\x1b[34m${s}\x1b[0m` : s), dim };
+// Rules embed ansi styling inside messages. JSON mode injects identity styling
+// at startup so no escape code can ever reach the doc, TTY or not (research D10).
+const identity = (s: string) => s;
+const ansi =
+  format === "json"
+    ? { red: identity, blue: identity, dim: identity }
+    : { red, blue: (s: string) => (process.stdout.isTTY ? `\x1b[34m${s}\x1b[0m` : s), dim };
 
 const config: Config = JSON.parse(
   readFileSync(join(ROOT, "design-system/lint/colors.json"), "utf-8"),
@@ -170,7 +201,7 @@ try {
   validatedSourceDirs = validateSourceDirs(config.sourceDirectories);
 } catch (err) {
   console.error((err as Error).message);
-  process.exit(1);
+  process.exit(2);
 }
 const { existing: SOURCE_DIRS, missing: MISSING_DIRS } = resolveExistingSourceDirs(
   validatedSourceDirs,
@@ -181,7 +212,7 @@ for (const dir of MISSING_DIRS) {
 }
 if (SOURCE_DIRS.length === 0) {
   console.error("No configured source directories exist; nothing to scan.");
-  process.exit(1);
+  process.exit(2);
 }
 const hadMissingDir = MISSING_DIRS.length > 0;
 
@@ -245,16 +276,42 @@ const tokens = {
 
 const linter = createLinter(config.rules ?? {}, tokens, ansi);
 
-const violations: OutViolation[] = [];
-const ignores: OutIgnore[] = [];
+// id→name map and designer-facing labels, both from the same rule modules the
+// linter dispatches. ruleLabels is built in ascending rule-id order — its key
+// order IS the human report's rule-group order (see report.ts).
+const ruleModules: RuleModule[] = [
+  ruleStyleColor, ruleRawCssColor, ruleVarColor, ruleAlphaModifier,
+  ruleSpectralColor, ruleColorRules, ruleDarkModifier, ruleHoverInteractive,
+  ruleUiColorOverride, ruleUndefinedToken,
+];
+const ruleName: Record<number, string> = Object.fromEntries(
+  ruleModules.map((r) => [r.id, r.name]),
+);
+const ruleLabels: Record<string, string> = Object.fromEntries(
+  [...ruleModules]
+    .sort((a, b) => a.id - b.id)
+    .map((r) => [r.name, config.rules[r.name]?.description ?? r.name]),
+);
 
-function accumulate({ violations: vs, ignores: is }: LintResult, filePath: string): void {
+const run: RunResult = {
+  violations: [],
+  ignores: [],
+  warnings: [],
+  missingSourceDirs: MISSING_DIRS,
+  ruleLabels,
+};
+
+function accumulate({ violations: vs, ignores: is, warnings: ws }: LintResult, filePath: string): void {
   for (const { line, message, ruleId } of vs) {
-    violations.push({ file: relative(ROOT, filePath), line, rule: ruleId, message });
+    run.violations.push({ file: relative(ROOT, filePath), line, rule: ruleName[ruleId], message });
   }
   for (const lineNum of is) {
-    ignores.push({ file: relative(ROOT, filePath), line: lineNum });
+    run.ignores.push({ file: relative(ROOT, filePath), line: lineNum });
   }
+  // Echo to stderr at scan time, exactly where the linter's console.warn used
+  // to fire — CI logs read the same in every mode (research D5).
+  for (const w of ws) console.warn(w);
+  run.warnings.push(...ws);
 }
 
 for (const f of collectSourceFiles(".css")) {
@@ -278,46 +335,16 @@ for (const f of collectSourceFiles(".erb")) {
   accumulate(linter.lintErbSource(source, f), f);
 }
 
-const ignoreHint =
-  ignores.length > 10
-    ? " — consider revisiting the token rules or adding new tokens"
-    : "";
-const ignoresSummary =
-  ignores.length > 0
-    ? `  ${dim(`(${ignores.length} line${ignores.length !== 1 ? "s" : ""} suppressed with color-lint-ignore${ignoreHint})`)}`
-    : "";
-
-if (violations.length === 0) {
-  console.log(
-    `✓ No color lint violations found.${ignoresSummary ? `\n${ignoresSummary}` : ""}`,
-  );
-  // A missing configured dir forces non-zero even with zero violations — a
-  // configured path could not be honored, so the run is not a clean pass.
-  process.exit(hadMissingDir ? 1 : 0);
+if (format === "json") {
+  // Stdout carries exactly one JSON document; warnings and missing-dir notices
+  // already went to stderr above (research D5).
+  process.stdout.write(renderJson(run));
+} else {
+  console.log(renderHuman(run, { bold, dim }));
 }
 
-// Build rule label from colors.json description — that's the designer-facing source of truth.
-const ruleModules: RuleModule[] = [
-  ruleStyleColor, ruleRawCssColor, ruleVarColor, ruleAlphaModifier,
-  ruleSpectralColor, ruleColorRules, ruleDarkModifier, ruleHoverInteractive,
-  ruleUiColorOverride, ruleUndefinedToken,
-];
-const ruleLabel: Record<number, string> = Object.fromEntries(
-  ruleModules.map((r) => [r.id, config.rules[r.name]?.description ?? `Rule ${r.id}`]),
-);
-
-const byRule = Map.groupBy(violations, (v) => v.rule);
-
-let total = 0;
-for (const [rule, items] of [...byRule.entries()].sort((a, b) => a[0] - b[0])) {
-  console.log(`\n${bold(ruleLabel[rule] ?? `Rule ${rule}`)} (${items.length})`);
-  for (const { file, line, message } of items) {
-    console.log(`  ${dim(`${file}:${line}`)}  ${message}`);
-    total++;
-  }
-}
-
-console.log(
-  `\n${total} violation${total !== 1 ? "s" : ""} found.${ignoresSummary ? `\n${ignoresSummary}` : ""}`,
-);
-process.exit(1);
+// Exit contract (contracts/cli.md): 2 = run error, 1 = violations, 0 = clean.
+// A missing configured dir is a run error even with zero violations — a
+// configured path could not be honored, so the run is not a clean pass.
+if (hadMissingDir) process.exit(2);
+process.exit(run.violations.length > 0 ? 1 : 0);

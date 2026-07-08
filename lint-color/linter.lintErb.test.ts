@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { ansi } from "./helpers.js";
 import { TAILWIND_COLOR_PREFIXES, TAILWIND_SPECTRAL_COLORS } from "./classify.ts";
 import { createLinter } from "./linter.ts";
@@ -118,6 +118,21 @@ describe("lintErbSource — malformed templates (US2)", () => {
   it("surfaces parse errors via recursiveErrors without aborting", () => {
     const errors = erbParseErrors(parseErb(`<div class="text-red-500"><span></div>`));
     expect(errors.length).toBeGreaterThan(0);
+  });
+
+  // 015/D8 — the parse note is a return value, not a console side effect: the
+  // reporter layer owns the destination (stderr, JSON doc).
+  it("returns the parse note in warnings and never calls console.warn", () => {
+    const warnSpy = vi.spyOn(console, "warn");
+    const { warnings } = lintErb(`<div class="text-red-500"><span></div>`);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("test.html.erb: ERB parse note");
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("returns empty warnings for a well-formed template", () => {
+    expect(lintErb(`<div class="text-red-500"></div>`).warnings).toEqual([]);
   });
 
   it("keeps a valid sibling source fully lintable after a malformed one", () => {
